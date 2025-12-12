@@ -53,7 +53,7 @@ export const getProgress = async (bookId) => {
   return await db.progress.get(parseInt(bookId))
 }
 
-// Preferences (using localStorage)
+// Preferences (using localStorage for global, IndexedDB for per-book)
 export const getPreferences = () => {
   const defaultPrefs = {
     theme: 'light',
@@ -61,12 +61,16 @@ export const getPreferences = () => {
     lineSpacing: 1.5,
     pageWidth: 'medium',
     fontFamily: 'serif'
+    // Note: twoPageMode is now per-book, not global
   }
   
   const stored = localStorage.getItem('ireader-preferences')
   if (stored) {
     try {
-      return { ...defaultPrefs, ...JSON.parse(stored) }
+      const parsed = JSON.parse(stored)
+      // Remove twoPageMode from global preferences if it exists (migration)
+      const { twoPageMode, ...globalPrefs } = parsed
+      return { ...defaultPrefs, ...globalPrefs }
     } catch (e) {
       return defaultPrefs
     }
@@ -75,6 +79,18 @@ export const getPreferences = () => {
 }
 
 export const savePreferences = (preferences) => {
-  localStorage.setItem('ireader-preferences', JSON.stringify(preferences))
+  // Remove twoPageMode from global preferences before saving
+  const { twoPageMode, ...globalPrefs } = preferences
+  localStorage.setItem('ireader-preferences', JSON.stringify(globalPrefs))
+}
+
+// Per-book preferences (stored in IndexedDB)
+export const getBookPreferences = async (bookId) => {
+  const book = await db.books.get(parseInt(bookId))
+  return book?.preferences || {}
+}
+
+export const saveBookPreferences = async (bookId, preferences) => {
+  await db.books.update(parseInt(bookId), { preferences })
 }
 

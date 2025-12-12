@@ -1,5 +1,5 @@
 // Helper function to clone ArrayBuffer
-const cloneArrayBuffer = (buffer) => {
+export const cloneArrayBuffer = (buffer) => {
   const cloned = new ArrayBuffer(buffer.byteLength)
   new Uint8Array(cloned).set(new Uint8Array(buffer))
   return cloned
@@ -21,12 +21,28 @@ export const parseEPUB = async (file) => {
         await book.loaded.metadata
         const metadata = await book.loaded.metadata
         
-        // Get cover
+        // Get cover and convert blob URL to data URL for persistence
         let coverUrl = null
         try {
-          const cover = await book.coverUrl()
-          if (cover) {
-            coverUrl = cover
+          const coverBlobUrl = await book.coverUrl()
+          if (coverBlobUrl) {
+            // Convert blob URL to data URL so it persists across page refreshes
+            try {
+              const response = await fetch(coverBlobUrl)
+              const blob = await response.blob()
+              coverUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onloadend = () => resolve(reader.result)
+                reader.onerror = reject
+                reader.readAsDataURL(blob)
+              })
+              // Revoke the blob URL to free memory
+              URL.revokeObjectURL(coverBlobUrl)
+            } catch (conversionError) {
+              console.warn('Could not convert cover blob URL to data URL', conversionError)
+              // Fallback to blob URL if conversion fails
+              coverUrl = coverBlobUrl
+            }
           }
         } catch (err) {
           console.warn('No cover found', err)
@@ -57,7 +73,7 @@ export const parseEPUB = async (file) => {
   })
 }
 
-// Parse PDF file
+// Parse PDF file using PDF.js (via react-pdf-viewer's underlying library)
 export const parsePDF = async (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -67,26 +83,41 @@ export const parsePDF = async (file) => {
         // Clone ArrayBuffer before using with PDF.js to prevent detachment
         const clonedBuffer = cloneArrayBuffer(arrayBuffer)
         
-        // Use PDF.js to get metadata
+        // Use PDF.js to get metadata and cover
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+        // Set worker source for PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+          'pdfjs-dist/build/pdf.worker.min.js',
+          import.meta.url
+        ).toString()
         
         const loadingTask = pdfjsLib.getDocument({ data: clonedBuffer })
         const pdf = await loadingTask.promise
         
+        // Get metadata
         const metadata = await pdf.getMetadata()
         const info = metadata.info || {}
         
-        // Try to get first page as cover
+        // Extract cover from first page using library's rendering
         let coverUrl = null
         try {
           const page = await pdf.getPage(1)
-          const viewport = page.getViewport({ scale: 1.0 })
+          const viewport = page.getViewport({ scale: 2.0 }) // Higher scale for better cover quality
+          
           const canvas = document.createElement('canvas')
           const context = canvas.getContext('2d')
-          canvas.height = viewport.height
-          canvas.width = viewport.width
+          const devicePixelRatio = window.devicePixelRatio || 1
           
+          // Set canvas size accounting for device pixel ratio
+          canvas.width = Math.floor(viewport.width * devicePixelRatio)
+          canvas.height = Math.floor(viewport.height * devicePixelRatio)
+          canvas.style.width = `${viewport.width}px`
+          canvas.style.height = `${viewport.height}px`
+          
+          // Scale context for high-DPI rendering
+          context.scale(devicePixelRatio, devicePixelRatio)
+          
+          // Render page
           await page.render({
             canvasContext: context,
             viewport: viewport

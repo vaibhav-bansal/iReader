@@ -36,40 +36,53 @@ if ('serviceWorker' in navigator) {
   })
 }
 
+// Only initialize PostHog if API key is provided
+const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY
+const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST
+
+const AppWrapper = () => {
+  if (posthogKey && posthogHost) {
+    return (
+      <PostHogProvider
+        apiKey={posthogKey}
+        options={{
+          api_host: posthogHost,
+          defaults: '2025-05-24',
+          capture_exceptions: true,
+          debug: import.meta.env.MODE === 'development',
+          session_recording: {
+            maskAllInputs: false,
+            maskTextSelector: null,
+            recordCrossOriginIframes: false,
+          },
+          autocapture: true,
+          capture_pageview: true,
+          capture_pageleave: true,
+          loaded: (posthog) => {
+            // PostHog automatically captures these properties
+          },
+        }}
+      >
+        <BrowserRouter>
+          <AnalyticsInitializer />
+          <App />
+          <Analytics />
+        </BrowserRouter>
+      </PostHogProvider>
+    )
+  } else {
+    // Run without PostHog if env vars not set
+    console.log('PostHog not configured - running without analytics')
+    return (
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    )
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <PostHogProvider
-      apiKey={import.meta.env.VITE_PUBLIC_POSTHOG_KEY}
-      options={{
-        api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
-        defaults: '2025-05-24',
-        capture_exceptions: true, // This enables capturing exceptions using Error Tracking, set to false if you don't want this
-        debug: import.meta.env.MODE === 'development',
-        session_recording: {
-          maskAllInputs: false, // Raw recordings for debugging
-          maskTextSelector: null, // No text masking
-          recordCrossOriginIframes: false,
-        },
-        // Enable autocapture for additional context (clicks, form submissions, etc.)
-        autocapture: true,
-        // Capture pageviews automatically
-        capture_pageview: true,
-        // Capture pageleaves
-        capture_pageleave: true,
-        // Enable advanced features
-        loaded: (posthog) => {
-          // PostHog automatically captures these properties:
-          // $os, $browser, $browser_version, $device_type, $screen_width, $screen_height
-          // $viewport_width, $viewport_height, $current_url, $referrer, $lib, $lib_version
-          // We enhance with additional custom properties in initializeAnalytics
-        },
-      }}
-    >
-      <BrowserRouter>
-        <AnalyticsInitializer />
-        <App />
-        <Analytics />
-      </BrowserRouter>
-    </PostHogProvider>
+    <AppWrapper />
   </React.StrictMode>,
 )

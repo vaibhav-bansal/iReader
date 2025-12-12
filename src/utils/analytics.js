@@ -207,7 +207,7 @@ const getConnectionInfo = () => {
     } else if (connectionInfo.effectiveType === '4g' && connectionInfo.downlink && connectionInfo.downlink > 20) {
       // Very high speeds are more likely WiFi
       connectionInfo.connectionMedium = 'likely_wifi'
-    } else if (connectionInfo.effectiveType && ['2g', '3g', 'slow-2g'].includes(connectionInfo.effectiveType)) {
+    } else if (connectionInfo.effectiveType && ['2g', '3g', 'slow-2g'].includes(connectionInfo.efficientType)) {
       // 2G/3G are almost certainly mobile data
       connectionInfo.connectionMedium = 'likely_mobile_data'
     } else {
@@ -217,7 +217,6 @@ const getConnectionInfo = () => {
 
   return connectionInfo
 }
-
 
 // Generate or retrieve unique user ID
 const getOrCreateUserId = () => {
@@ -469,3 +468,219 @@ export const useAnalytics = () => {
   return { track, identify, posthog }
 }
 
+// Test function to trigger all analytics events at once
+// This can be called from browser console: window.testAllAnalyticsEvents()
+export const testAllAnalyticsEvents = () => {
+  const posthog = getPostHog()
+  if (!posthog) {
+    console.warn('PostHog not initialized. Waiting for initialization...')
+    setTimeout(() => {
+      const retryPosthog = getPostHog()
+      if (retryPosthog) {
+        testAllAnalyticsEvents()
+      } else {
+        console.error('PostHog still not initialized after retry')
+      }
+    }, 1000)
+    return
+  }
+
+  const userId = getOrCreateUserId()
+  const sessionId = getOrCreateSessionId()
+  const deviceType = getDeviceType()
+
+  console.log('🧪 Testing all analytics events...')
+
+  // App lifecycle events
+  posthog.capture(ANALYTICS_EVENTS.APP_LOADED, {
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    device_type: deviceType,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.SESSION_STARTED, {
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    device_type: deviceType,
+    test_mode: true,
+  })
+
+  // Library events
+  posthog.capture(ANALYTICS_EVENTS.LIBRARY_VIEWED, {
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    book_count: 3,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.BOOK_UPLOADED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.BOOK_TITLE]: 'Test Book Title',
+    [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: 'Test Author',
+    [ANALYTICS_PROPERTIES.BOOK_FORMAT]: 'epub',
+    [ANALYTICS_PROPERTIES.BOOK_SIZE]: 1024000,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    upload_method: 'test',
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.BOOK_OPENED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.BOOK_TITLE]: 'Test Book Title',
+    [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: 'Test Author',
+    [ANALYTICS_PROPERTIES.BOOK_FORMAT]: 'epub',
+    [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: 0,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    source: 'test',
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.BOOK_DELETED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-2',
+    [ANALYTICS_PROPERTIES.BOOK_TITLE]: 'Deleted Test Book',
+    [ANALYTICS_PROPERTIES.BOOK_FORMAT]: 'pdf',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  // Reading events
+  posthog.capture(ANALYTICS_EVENTS.READING_STARTED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.BOOK_TITLE]: 'Test Book Title',
+    [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: 'Test Author',
+    [ANALYTICS_PROPERTIES.BOOK_FORMAT]: 'epub',
+    [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: 0,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    resumed: false,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: 25.5,
+    [ANALYTICS_PROPERTIES.READING_POSITION]: 'epubcfi(/6/4[chap01ref]!/4/2/2[page1]/1:0)',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'next',
+    [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: 30,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'previous',
+    [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: 28,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.READING_COMPLETED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.BOOK_TITLE]: 'Test Book Title',
+    [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: 'Test Author',
+    [ANALYTICS_PROPERTIES.BOOK_FORMAT]: 'epub',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  // Settings & preferences events
+  posthog.capture(ANALYTICS_EVENTS.THEME_CHANGED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.THEME]: 'dark',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.FONT_SIZE_CHANGED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.FONT_SIZE]: 18,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.LINE_SPACING_CHANGED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.LINE_SPACING]: 1.5,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.PAGE_WIDTH_CHANGED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.PAGE_WIDTH]: 'narrow',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.FONT_FAMILY_CHANGED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.FONT_FAMILY]: 'serif',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  posthog.capture(ANALYTICS_EVENTS.SETTINGS_OPENED, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  // Navigation events
+  posthog.capture(ANALYTICS_EVENTS.NAVIGATION_BACK_TO_LIBRARY, {
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: 50,
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  // Dictionary event
+  posthog.capture(ANALYTICS_EVENTS.DICTIONARY_LOOKUP, {
+    [ANALYTICS_PROPERTIES.DICTIONARY_WORD]: 'serendipity',
+    [ANALYTICS_PROPERTIES.BOOK_ID]: 'test-book-1',
+    [ANALYTICS_PROPERTIES.SESSION_ID]: sessionId,
+    [ANALYTICS_PROPERTIES.USER_ID]: userId,
+    test_mode: true,
+  })
+
+  // Force flush to send events immediately
+  if (posthog.flush) {
+    posthog.flush()
+    console.log('✅ All events captured and flushed! Check PostHog dashboard.')
+  } else {
+    console.log('✅ All events captured! They will be sent in the next batch (within 30 seconds).')
+    console.log('💡 Tip: Close the tab to force immediate send via beforeunload.')
+  }
+
+  return {
+    userId,
+    sessionId,
+    deviceType,
+    eventsSent: 17,
+  }
+}
+
+// Expose test function globally for easy console access
+if (typeof window !== 'undefined') {
+  window.testAllAnalyticsEvents = testAllAnalyticsEvents
+}

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import './ReaderControls.css'
 
-function ReaderControls({ preferences, onPreferencesChange, onClose }) {
+function ReaderControls({ preferences, onPreferencesChange, onClose, bookFormat }) {
   const [localPrefs, setLocalPrefs] = useState(preferences)
 
   useEffect(() => {
@@ -11,7 +11,8 @@ function ReaderControls({ preferences, onPreferencesChange, onClose }) {
   const handleChange = (key, value) => {
     const updated = { ...localPrefs, [key]: value }
     setLocalPrefs(updated)
-    onPreferencesChange(updated)
+    // Apply immediately for better UX
+    onPreferencesChange({ [key]: value })
   }
 
   return (
@@ -19,95 +20,123 @@ function ReaderControls({ preferences, onPreferencesChange, onClose }) {
       <div className="reader-controls-panel" onClick={(e) => e.stopPropagation()}>
         <div className="controls-header">
           <h3>Reading Settings</h3>
-          <button className="close-button" onClick={onClose}>×</button>
+          <button className="close-button" onClick={onClose} aria-label="Close">
+            ×
+          </button>
         </div>
 
         <div className="controls-content">
+          {/* Theme Selection */}
           <div className="control-group">
             <label>Theme</label>
             <div className="theme-buttons">
               <button
-                className={`theme-button ${localPrefs.theme === 'light' ? 'active' : ''}`}
+                className={`theme-button theme-light ${localPrefs.theme === 'light' ? 'active' : ''}`}
                 onClick={() => handleChange('theme', 'light')}
               >
+                <span className="theme-preview light"></span>
                 Light
               </button>
               <button
-                className={`theme-button ${localPrefs.theme === 'dark' ? 'active' : ''}`}
+                className={`theme-button theme-dark ${localPrefs.theme === 'dark' ? 'active' : ''}`}
                 onClick={() => handleChange('theme', 'dark')}
               >
+                <span className="theme-preview dark"></span>
                 Dark
               </button>
               <button
-                className={`theme-button ${localPrefs.theme === 'sepia' ? 'active' : ''}`}
+                className={`theme-button theme-sepia ${localPrefs.theme === 'sepia' ? 'active' : ''}`}
                 onClick={() => handleChange('theme', 'sepia')}
               >
+                <span className="theme-preview sepia"></span>
                 Sepia
               </button>
             </div>
           </div>
 
-          <div className="control-group">
-            <label>Font Size: {localPrefs.fontSize}px</label>
-            <input
-              type="range"
-              min="12"
-              max="24"
-              value={localPrefs.fontSize}
-              onChange={(e) => handleChange('fontSize', parseInt(e.target.value))}
-              className="slider"
-            />
-          </div>
+          {/* Font Size - Only show for EPUB since PDF has its own zoom */}
+          {bookFormat === 'epub' && (
+            <>
+              <div className="control-group">
+                <label>
+                  Font Size
+                  <span className="control-value">{localPrefs.fontSize}px</span>
+                </label>
+                <input
+                  type="range"
+                  min="12"
+                  max="28"
+                  value={localPrefs.fontSize}
+                  onChange={(e) => handleChange('fontSize', parseInt(e.target.value))}
+                  className="slider"
+                />
+                <div className="slider-labels">
+                  <span>A</span>
+                  <span style={{ fontSize: '1.25em' }}>A</span>
+                </div>
+              </div>
 
-          <div className="control-group">
-            <label>Line Spacing: {localPrefs.lineSpacing}x</label>
-            <input
-              type="range"
-              min="1"
-              max="2.5"
-              step="0.1"
-              value={localPrefs.lineSpacing}
-              onChange={(e) => handleChange('lineSpacing', parseFloat(e.target.value))}
-              className="slider"
-            />
-          </div>
+              <div className="control-group">
+                <label>
+                  Line Spacing
+                  <span className="control-value">{localPrefs.lineSpacing}x</span>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="2.5"
+                  step="0.1"
+                  value={localPrefs.lineSpacing}
+                  onChange={(e) => handleChange('lineSpacing', parseFloat(e.target.value))}
+                  className="slider"
+                />
+                <div className="slider-labels">
+                  <span>≡</span>
+                  <span>⋮</span>
+                </div>
+              </div>
 
-          <div className="control-group">
-            <label>Page Width</label>
-            <div className="width-buttons">
-              <button
-                className={`width-button ${localPrefs.pageWidth === 'narrow' ? 'active' : ''}`}
-                onClick={() => handleChange('pageWidth', 'narrow')}
-              >
-                Narrow
-              </button>
-              <button
-                className={`width-button ${localPrefs.pageWidth === 'medium' ? 'active' : ''}`}
-                onClick={() => handleChange('pageWidth', 'medium')}
-              >
-                Medium
-              </button>
-              <button
-                className={`width-button ${localPrefs.pageWidth === 'wide' ? 'active' : ''}`}
-                onClick={() => handleChange('pageWidth', 'wide')}
-              >
-                Wide
-              </button>
+              <div className="control-group">
+                <label>Font Family</label>
+                <div className="font-buttons">
+                  <button
+                    className={`font-button ${localPrefs.fontFamily === 'serif' ? 'active' : ''}`}
+                    onClick={() => handleChange('fontFamily', 'serif')}
+                    style={{ fontFamily: 'Georgia, serif' }}
+                  >
+                    Serif
+                  </button>
+                  <button
+                    className={`font-button ${localPrefs.fontFamily === 'sans-serif' ? 'active' : ''}`}
+                    onClick={() => handleChange('fontFamily', 'sans-serif')}
+                    style={{ fontFamily: '-apple-system, sans-serif' }}
+                  >
+                    Sans
+                  </button>
+                  <button
+                    className={`font-button ${localPrefs.fontFamily === 'monospace' ? 'active' : ''}`}
+                    onClick={() => handleChange('fontFamily', 'monospace')}
+                    style={{ fontFamily: 'Courier, monospace' }}
+                  >
+                    Mono
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* PDF-specific notice */}
+          {bookFormat === 'pdf' && (
+            <div className="control-info">
+              <p>💡 Use the PDF toolbar for zoom and navigation controls.</p>
             </div>
-          </div>
+          )}
+        </div>
 
-          <div className="control-group">
-            <label>Font Family</label>
-            <select
-              value={localPrefs.fontFamily}
-              onChange={(e) => handleChange('fontFamily', e.target.value)}
-              className="select-input"
-            >
-              <option value="serif">Serif</option>
-              <option value="sans-serif">Sans-serif</option>
-              <option value="monospace">Monospace</option>
-            </select>
-          </div>
+        <div className="controls-footer">
+          <button className="done-button" onClick={onClose}>
+            Done
+          </button>
         </div>
       </div>
     </div>
@@ -115,4 +144,3 @@ function ReaderControls({ preferences, onPreferencesChange, onClose }) {
 }
 
 export default ReaderControls
-

@@ -1,58 +1,203 @@
-* {
+/* ==========================================
+   CSS Reset & Base Styles
+   ========================================== */
+*, *::before, *::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+html {
+  /* Prevent horizontal scroll at the root level */
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ==========================================
+   CSS Variables - Themes
+   ========================================== */
 :root {
   /* Light theme (default) */
   --bg-color: #ffffff;
-  --text-color: #000000;
-  --border-color: #e0e0e0;
+  --text-color: #1a1a1a;
+  --border-color: #e5e5e5;
   --hover-bg: #f5f5f5;
-  --shadow: rgba(0, 0, 0, 0.1);
+  --shadow: rgba(0, 0, 0, 0.08);
+  
+  /* Accent colors */
+  --accent-color: #4CAF50;
+  --accent-hover: #45a049;
 }
 
 [data-theme="dark"] {
-  --bg-color: #1a1a1a;
+  --bg-color: #121212;
   --text-color: #e0e0e0;
-  --border-color: #333333;
-  --hover-bg: #2a2a2a;
-  --shadow: rgba(0, 0, 0, 0.3);
+  --border-color: #2a2a2a;
+  --hover-bg: #1e1e1e;
+  --shadow: rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="sepia"] {
-  --bg-color: #f4ecd8;
+  --bg-color: #f9f3e3;
   --text-color: #5c4b37;
-  --border-color: #d4c4a8;
-  --hover-bg: #e8dcc4;
-  --shadow: rgba(0, 0, 0, 0.1);
+  --border-color: #e0d5c1;
+  --hover-bg: #f0e8d8;
+  --shadow: rgba(0, 0, 0, 0.08);
 }
 
+/* ==========================================
+   Body Styles
+   ========================================== */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 
+               'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-color);
   color: var(--text-color);
   transition: background-color 0.3s ease, color 0.3s ease;
+  line-height: 1.5;
+  
+  /* Prevent horizontal scroll */
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+#root {
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+  overflow-x: hidden;
 }
 
+/* ==========================================
+   Typography
+   ========================================== */
+h1, h2, h3, h4, h5, h6 {
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+p {
+  line-height: 1.6;
+}
+
+/* ==========================================
+   Interactive Elements
+   ========================================== */
 button {
   cursor: pointer;
   border: none;
   background: none;
   font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
 
-input, select {
+button:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+input, select, textarea {
   font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.5rem;
 }
 
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+}
+
+/* ==========================================
+   Links
+   ========================================== */
+a {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================
+   Scrollbar Styles
+   ========================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--hover-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-color);
+  opacity: 0.5;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) var(--hover-bg);
+}
+
+/* ==========================================
+   Selection
+   ========================================== */
+::selection {
+  background-color: rgba(76, 175, 80, 0.3);
+  color: inherit;
+}
+
+/* ==========================================
+   Utility Classes
+   ========================================== */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================
+   Mobile-specific fixes
+   ========================================== */
+@media (max-width: 768px) {
+  /* Prevent rubber-banding on iOS */
+  html, body {
+    overscroll-behavior: none;
+  }
+  
+  /* Better touch handling */
+  input, button, select, textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+  }
+}
+
+/* Safe area padding for notched devices */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}

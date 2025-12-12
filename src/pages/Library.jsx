@@ -216,12 +216,25 @@ function Library() {
             >
               <div className="book-cover">
                 {book.cover ? (
-                  <img src={book.cover} alt={book.title} />
-                ) : (
-                  <div className="book-cover-placeholder">
-                    <span>{book.title.charAt(0).toUpperCase()}</span>
-                  </div>
-                )}
+                  <img 
+                    src={book.cover} 
+                    alt={book.title}
+                    onError={(e) => {
+                      // Fallback to placeholder if cover fails to load (e.g., invalid blob URL)
+                      e.target.style.display = 'none'
+                      const placeholder = e.target.nextElementSibling
+                      if (placeholder) {
+                        placeholder.style.display = 'flex'
+                      }
+                    }}
+                  />
+                ) : null}
+                <div 
+                  className="book-cover-placeholder"
+                  style={{ display: book.cover ? 'none' : 'flex' }}
+                >
+                  <span>{book.title.charAt(0).toUpperCase()}</span>
+                </div>
                 <div className="book-format-badge">{book.format.toUpperCase()}</div>
                 {book.progress > 0 && (
                   <div className="book-progress-bar">

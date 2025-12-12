@@ -1,574 +1,497 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getBook, getProgress, saveProgress } from '../utils/storage'
-import { getPreferences, savePreferences } from '../utils/storage'
+import { getBook, getProgress, saveProgress, getPreferences, savePreferences } from '../utils/storage'
 import ReaderControls from '../components/ReaderControls'
 import { useAnalytics, ANALYTICS_EVENTS, ANALYTICS_PROPERTIES } from '../utils/analytics'
+import { Worker } from '@react-pdf-viewer/core'
+import PDFViewer from '../components/PDFViewer'
 import './Reader.css'
+
+// PDF.js worker URL - use local worker
+const PDF_WORKER_URL = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString()
 
 function Reader() {
   const { bookId } = useParams()
   const navigate = useNavigate()
+  const { track } = useAnalytics()
+  
+  // Core state
   const [book, setBook] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [rendition, setRendition] = useState(null)
-  const [bookInstance, setBookInstance] = useState(null)
-  const [currentLocation, setCurrentLocation] = useState(null)
+  const [error, setError] = useState(null)
+  
+  // EPUB state
+  const [epubRendition, setEpubRendition] = useState(null)
+  const [epubBook, setEpubBook] = useState(null)
+  const [epubReady, setEpubReady] = useState(false)
+  
+  // PDF state
+  const [pdfInitialPage, setPdfInitialPage] = useState(0)
+  
+  // UI state
   const [progress, setProgress] = useState(0)
   const [showControls, setShowControls] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
-  const [preferences, setPreferences] = useState(getPreferences())
-  const readerRef = useRef(null)
-  const pdfViewerRef = useRef(null)
-  const { track } = useAnalytics()
-  const progressUpdateTimeoutRef = useRef(null)
+  const [preferences, setPreferences] = useState(() => getPreferences())
+  
+  // Refs
+  const epubContainerRef = useRef(null)
+  const progressTimeoutRef = useRef(null)
+  const savedPositionRef = useRef(null)
 
+  // Apply theme on mount and preference changes
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', preferences.theme)
+  }, [preferences.theme])
+
+  // Load book data
   useEffect(() => {
     loadBook()
-    applyTheme()
-  }, [bookId])
-
-  useEffect(() => {
-    if (rendition && preferences) {
-      applyPreferences()
-    }
-  }, [rendition, preferences])
-  
-  // Track reading completion when progress reaches 100%
-  useEffect(() => {
-    if (progress >= 100 && book) {
-      track(ANALYTICS_EVENTS.READING_COMPLETED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.BOOK_TITLE]: book.title,
-        [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: book.author || 'Unknown',
-        [ANALYTICS_PROPERTIES.BOOK_FORMAT]: book.format,
-      })
-    }
-  }, [progress, book])
-  
-  // Cleanup timeout on unmount
-  useEffect(() => {
     return () => {
-      if (progressUpdateTimeoutRef.current) {
-        clearTimeout(progressUpdateTimeoutRef.current)
+      // Cleanup EPUB on unmount
+      if (epubBook) {
+        try {
+          epubBook.destroy()
+        } catch (e) {
+          console.warn('Error destroying epub:', e)
+        }
+      }
+      if (progressTimeoutRef.current) {
+        clearTimeout(progressTimeoutRef.current)
       }
     }
-  }, [])
+  }, [bookId])
+
+  // Render EPUB when book and container are ready
+  useEffect(() => {
+    if (book?.format === 'epub' && epubContainerRef.current && !epubRendition && !epubReady) {
+      // Wait for container to have dimensions
+      const checkContainer = () => {
+        const container = epubContainerRef.current
+        if (container) {
+          const rect = container.getBoundingClientRect()
+          if (rect.width > 0 && rect.height > 0) {
+            renderEpub()
+          } else {
+            // Retry after a short delay if container doesn't have dimensions yet
+            setTimeout(checkContainer, 100)
+          }
+        }
+      }
+      checkContainer()
+    }
+  }, [book, epubRendition, epubReady])
+
+  // Apply preferences to EPUB rendition
+  useEffect(() => {
+    if (epubRendition && epubReady) {
+      applyEpubPreferences()
+    }
+  }, [epubRendition, epubReady, preferences])
 
   const loadBook = async () => {
     try {
-      console.log('Loading book with ID:', bookId)
+      setLoading(true)
+      setError(null)
+      setEpubRendition(null)
+      setEpubBook(null)
+      setEpubReady(false)
+      
       const bookData = await getBook(bookId)
       if (!bookData) {
-        alert('Book not found')
-        navigate('/')
-        return
+        throw new Error('Book not found')
       }
 
-      console.log('Book data retrieved:', {
-        id: bookData.id,
-        title: bookData.title,
-        format: bookData.format,
-        hasFileData: !!bookData.fileData,
-        fileDataType: typeof bookData.fileData,
-        fileDataIsArrayBuffer: bookData.fileData instanceof ArrayBuffer,
-        fileDataSize: bookData.fileData ? (bookData.fileData.byteLength || bookData.fileData.length) : 0
-      })
-
-      // Verify fileData exists and convert if needed
-      if (!bookData.fileData) {
-        throw new Error('Book file data is missing from storage. Please re-upload the book.')
+      // Ensure fileData is ArrayBuffer
+      let fileData = bookData.fileData
+      if (!fileData) {
+        throw new Error('Book file data is missing. Please re-upload the book.')
       }
-
-      // Ensure fileData is an ArrayBuffer (IndexedDB might return it differently)
-      if (!(bookData.fileData instanceof ArrayBuffer)) {
-        console.warn('fileData is not ArrayBuffer, attempting conversion')
-        if (bookData.fileData instanceof Uint8Array) {
-          bookData.fileData = bookData.fileData.buffer
-        } else if (bookData.fileData instanceof Blob) {
-          // Convert Blob to ArrayBuffer
-          bookData.fileData = await bookData.fileData.arrayBuffer()
-        } else if (typeof bookData.fileData === 'string') {
-          // If it's a base64 string, decode it
-          const binaryString = atob(bookData.fileData)
-          const bytes = new Uint8Array(binaryString.length)
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i)
-          }
-          bookData.fileData = bytes.buffer
+      
+      if (!(fileData instanceof ArrayBuffer)) {
+        if (fileData instanceof Uint8Array) {
+          fileData = fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength)
+        } else if (fileData instanceof Blob) {
+          fileData = await fileData.arrayBuffer()
         } else {
-          throw new Error('Invalid file data format in storage')
+          throw new Error('Invalid file data format')
+        }
+        bookData.fileData = fileData
+      }
+
+      // Load saved progress
+      const savedProgress = await getProgress(bookId)
+      if (savedProgress) {
+        setProgress(savedProgress.percentage || 0)
+        savedPositionRef.current = savedProgress.position
+        
+        // For PDF, set initial page
+        if (bookData.format === 'pdf' && savedProgress.position) {
+          const page = parseInt(savedProgress.position) || 0
+          setPdfInitialPage(page)
         }
       }
 
       setBook(bookData)
       
-      // Load saved progress
-      const savedProgress = await getProgress(bookId)
-      if (savedProgress) {
-        setProgress(savedProgress.percentage)
-      }
-
       // Track reading started
       track(ANALYTICS_EVENTS.READING_STARTED, {
         [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
         [ANALYTICS_PROPERTIES.BOOK_TITLE]: bookData.title,
-        [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: bookData.author || 'Unknown',
         [ANALYTICS_PROPERTIES.BOOK_FORMAT]: bookData.format,
-        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: savedProgress?.percentage || 0,
-        resumed: savedProgress ? true : false,
+        resumed: !!savedProgress,
       })
 
-      // Render based on format
-      if (bookData.format === 'epub') {
-        console.log('Starting EPUB load...')
-        await loadEPUB(bookData, savedProgress)
-        console.log('EPUB load completed')
-      } else if (bookData.format === 'pdf') {
-        console.log('Starting PDF load...')
-        await loadPDF(bookData, savedProgress)
-        console.log('PDF load completed')
-      } else {
-        throw new Error(`Unsupported book format: ${bookData.format}`)
-      }
-    } catch (error) {
-      console.error('Error loading book:', error)
-      alert(`Error loading book: ${error.message}\n\nPlease check the browser console for more details.`)
-      setLoading(false)
-      // Don't navigate away immediately, let user see the error
-      setTimeout(() => {
-        navigate('/')
-      }, 3000)
+    } catch (err) {
+      console.error('Error loading book:', err)
+      setError(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const loadEPUB = async (bookData, savedProgress) => {
+  const renderEpub = async () => {
+    if (!book?.fileData || !epubContainerRef.current) {
+      console.log('Cannot render EPUB: missing book data or container')
+      return
+    }
+
     try {
-      console.log('Loading EPUB, fileData type:', typeof bookData.fileData, 'is ArrayBuffer:', bookData.fileData instanceof ArrayBuffer)
+      console.log('Starting EPUB render...')
+      setLoading(true)
       
-      // Check if fileData exists
-      if (!bookData.fileData) {
-        throw new Error('Book file data is missing')
-      }
-
-      // If fileData is not an ArrayBuffer, try to convert it
-      let fileData = bookData.fileData
-      if (!(fileData instanceof ArrayBuffer)) {
-        console.warn('fileData is not ArrayBuffer, attempting conversion')
-        if (fileData instanceof Uint8Array) {
-          fileData = fileData.buffer
-        } else {
-          throw new Error('Invalid file data format')
-        }
-      }
-
+      // Clear container
+      const container = epubContainerRef.current
+      container.innerHTML = ''
+      
       const EPUB = (await import('epubjs')).default
       
-      // Create book with timeout
-      const bookPromise = new Promise((resolve, reject) => {
-        try {
-          const book = EPUB(fileData)
-          
-          // Set timeout for book.ready
-          const timeout = setTimeout(() => {
-            reject(new Error('EPUB loading timeout: book.ready did not resolve within 30 seconds'))
-          }, 30000)
-          
-          book.ready.then(() => {
-            clearTimeout(timeout)
-            resolve(book)
-          }).catch((err) => {
-            clearTimeout(timeout)
-            reject(err)
-          })
-        } catch (err) {
-          reject(err)
-        }
-      })
+      // Clone the ArrayBuffer to avoid detachment issues
+      const clonedData = book.fileData.slice(0)
       
-      const book = await bookPromise
-      console.log('EPUB book loaded successfully')
+      // Create book instance
+      const epubInstance = EPUB(clonedData)
+      
+      console.log('Waiting for EPUB to be ready...')
+      await epubInstance.ready
+      console.log('EPUB ready, creating rendition...')
+      
+      // Get container dimensions - ensure we have valid dimensions
+      const rect = container.getBoundingClientRect()
+      const width = rect.width > 0 ? rect.width : window.innerWidth
+      const height = rect.height > 0 ? rect.height : window.innerHeight - 200
+      
+      console.log('Container dimensions:', width, height)
+      
+      // Create rendition with explicit dimensions
+      const rendition = epubInstance.renderTo(container, {
+        width: width,
+        height: height,
+        spread: 'none',
+        flow: 'paginated',
+      })
 
-      // Ensure reader container is ready
-      if (!readerRef.current) {
-        throw new Error('Reader container not available')
+      // Set up event handlers before display
+      rendition.on('relocated', (location) => {
+        handleEpubRelocated(location, epubInstance)
+      })
+
+      // Display at saved position or start
+      const initialLocation = savedPositionRef.current || undefined
+      console.log('Displaying at location:', initialLocation || 'start')
+      
+      await rendition.display(initialLocation)
+      console.log('EPUB displayed successfully')
+
+      // Generate locations for progress (do this after display)
+      try {
+        if (epubInstance.locations && epubInstance.locations.length() === 0) {
+          console.log('Generating locations...')
+          await epubInstance.locations.generate(1024)
+          console.log('Locations generated')
+        }
+      } catch (locErr) {
+        console.warn('Could not generate locations:', locErr)
       }
 
-      const renditionInstance = book.renderTo(readerRef.current, {
-        width: '100%',
-        height: '100%',
-        spread: 'none'
-      })
-
-      // Set timeout for display
-      const displayPromise = new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('EPUB display timeout: rendition.display did not resolve within 30 seconds'))
-        }, 30000)
-        
-        renditionInstance.display()
-          .then(() => {
-            clearTimeout(timeout)
-            resolve()
-          })
-          .catch((err) => {
-            clearTimeout(timeout)
-            reject(err)
-          })
-      })
-
-      await displayPromise
-      console.log('EPUB rendered successfully')
-      
-      setRendition(renditionInstance)
-      setBookInstance(book)
-
-      // Resume from saved position
-      if (savedProgress && savedProgress.position) {
-        try {
-          await renditionInstance.display(savedProgress.position)
-        } catch (e) {
-          console.warn('Could not resume from saved position', e)
+      // Handle window resize
+      const handleResize = () => {
+        if (rendition && container) {
+          const newRect = container.getBoundingClientRect()
+          if (newRect.width > 0 && newRect.height > 0) {
+            rendition.resize(newRect.width, newRect.height)
+          }
         }
       }
+      window.addEventListener('resize', handleResize)
+      rendition._resizeHandler = handleResize
 
-      // Track location changes
-      renditionInstance.on('relocated', (location) => {
-        setCurrentLocation(location)
-        updateProgress(book, location)
-      })
-
-      applyPreferences()
-    } catch (error) {
-      console.error('Error loading EPUB:', error)
-      alert(`Error loading EPUB: ${error.message}. Please check the browser console for details.`)
-      throw error
+      setEpubBook(epubInstance)
+      setEpubRendition(rendition)
+      setEpubReady(true)
+      setLoading(false)
+      
+    } catch (err) {
+      console.error('Error rendering EPUB:', err)
+      setError(`Failed to render EPUB: ${err.message}`)
+      setLoading(false)
     }
   }
 
-  const loadPDF = async (bookData, savedProgress) => {
-    try {
-      const pdfjsLib = await import('pdfjs-dist')
-      // Use CDN for worker in development, or copy worker to public in production
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+  const handleEpubRelocated = useCallback((location, epubInstance) => {
+    if (!location?.start) return
 
-      const loadingTask = pdfjsLib.getDocument({ data: bookData.fileData })
-      const pdf = await loadingTask.promise
-
-      const container = readerRef.current
-      container.innerHTML = ''
-
-      let startPage = 1
-      if (savedProgress && savedProgress.position) {
-        startPage = parseInt(savedProgress.position) || 1
-      }
-
-      // Render first page
-      await renderPDFPage(pdf, startPage, container)
-
-      // Track page changes for progress
-      let currentPageRef = startPage
-      const updatePDFProgress = () => {
-        const currentPage = currentPageRef
-        const percentage = (currentPage / pdf.numPages) * 100
-        setProgress(percentage)
-        saveProgress(bookId, currentPage.toString(), percentage)
-        
-        // Debounce progress tracking
-        if (progressUpdateTimeoutRef.current) {
-          clearTimeout(progressUpdateTimeoutRef.current)
-        }
-        
-        progressUpdateTimeoutRef.current = setTimeout(() => {
-          track(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
-            [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-            [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
-            [ANALYTICS_PROPERTIES.READING_POSITION]: currentPage.toString(),
-            page_number: currentPage,
-          })
-        }, 2000)
-      }
-
-      // Store PDF instance for navigation
-      const pdfInstance = { 
-        pdf, 
-        currentPage: startPage, 
-        totalPages: pdf.numPages, 
-        updateProgress: updatePDFProgress,
-        setCurrentPage: (page) => { currentPageRef = page }
-      }
-      setBookInstance(pdfInstance)
-      
-      // Track initial PDF progress
-      updatePDFProgress()
-      
-      // Track initial PDF progress
-      updatePDFProgress()
-    } catch (error) {
-      console.error('Error loading PDF:', error)
-      throw error
-    }
-  }
-
-  const renderPDFPage = async (pdf, pageNum, container) => {
-    const page = await pdf.getPage(pageNum)
-    const viewport = page.getViewport({ scale: 2.0 })
+    const cfi = location.start.cfi
+    let percentage = 0
     
-    const canvas = document.createElement('canvas')
-    const context = canvas.getContext('2d')
-    canvas.height = viewport.height
-    canvas.width = viewport.width
+    if (location.start.percentage !== undefined) {
+      percentage = location.start.percentage * 100
+    } else if (epubInstance?.locations) {
+      try {
+        percentage = (epubInstance.locations.percentageFromCfi(cfi) || 0) * 100
+      } catch (e) {
+        console.warn('Could not calculate percentage:', e)
+      }
+    }
+
+    setProgress(percentage)
     
-    await page.render({
-      canvasContext: context,
-      viewport: viewport
-    }).promise
-
-    container.innerHTML = ''
-    container.appendChild(canvas)
-  }
-
-  const updateProgress = async (book, location) => {
-    if (!book || !location) return
-
-    try {
-      const totalLocations = book.locations.total
-      const currentLocation = location.start.cfi
-      const percentage = totalLocations > 0 
-        ? (location.start.percentage * 100) 
-        : 0
-
-      setProgress(percentage)
-      await saveProgress(bookId, currentLocation, percentage)
-      
-      // Debounce progress tracking to avoid too many events
-      if (progressUpdateTimeoutRef.current) {
-        clearTimeout(progressUpdateTimeoutRef.current)
-      }
-      
-      progressUpdateTimeoutRef.current = setTimeout(() => {
-        track(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
-          [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-          [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
-          [ANALYTICS_PROPERTIES.READING_POSITION]: currentLocation,
-        })
-      }, 2000) // Track every 2 seconds max
-    } catch (error) {
-      console.error('Error updating progress:', error)
+    // Debounced save
+    if (progressTimeoutRef.current) {
+      clearTimeout(progressTimeoutRef.current)
     }
-  }
-
-  const applyTheme = () => {
-    document.documentElement.setAttribute('data-theme', preferences.theme)
-  }
-
-  const applyPreferences = () => {
-    if (!rendition) return
-
-    const theme = {
-      body: {
-        'font-family': preferences.fontFamily === 'serif' 
-          ? 'Georgia, serif' 
-          : preferences.fontFamily === 'sans-serif'
-          ? 'system-ui, sans-serif'
-          : 'monospace',
-        'font-size': `${preferences.fontSize}px`,
-        'line-height': `${preferences.lineSpacing}`,
-        'padding': preferences.pageWidth === 'narrow' 
-          ? '0 20%' 
-          : preferences.pageWidth === 'wide'
-          ? '0 5%'
-          : '0 15%'
-      }
-    }
-
-    rendition.themes.default(theme)
-    rendition.themes.fontSize(`${preferences.fontSize}px`)
-  }
-
-  const handleNext = () => {
-    if (rendition) {
-      rendition.next()
-      track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
+    progressTimeoutRef.current = setTimeout(() => {
+      saveProgress(bookId, cfi, percentage)
+      track(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
         [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'next',
-        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: progress,
-      })
-    } else if (bookInstance && bookInstance.pdf) {
-      // PDF navigation
-      const nextPage = Math.min(bookInstance.currentPage + 1, bookInstance.totalPages)
-      renderPDFPage(bookInstance.pdf, nextPage, readerRef.current)
-      bookInstance.currentPage = nextPage
-      if (bookInstance.setCurrentPage) {
-        bookInstance.setCurrentPage(nextPage)
-      }
-      const percentage = (nextPage / bookInstance.totalPages) * 100
-      setProgress(percentage)
-      saveProgress(bookId, nextPage.toString(), percentage)
-      
-      track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'next',
         [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
-        page_number: nextPage,
+      })
+    }, 1000)
+  }, [bookId, track])
+
+  const applyEpubPreferences = () => {
+    if (!epubRendition) return
+
+    try {
+      const fontFamily = preferences.fontFamily === 'serif'
+        ? 'Georgia, "Times New Roman", serif'
+        : preferences.fontFamily === 'sans-serif'
+        ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+        : '"Courier New", Courier, monospace'
+
+      // Theme colors based on current theme
+      const themeColors = {
+        light: { bg: '#ffffff', text: '#1a1a1a' },
+        dark: { bg: '#121212', text: '#e0e0e0' },
+        sepia: { bg: '#f9f3e3', text: '#5c4b37' },
+      }
+      const colors = themeColors[preferences.theme] || themeColors.light
+
+      epubRendition.themes.default({
+        body: {
+          'font-family': fontFamily + ' !important',
+          'font-size': `${preferences.fontSize}px !important`,
+          'line-height': `${preferences.lineSpacing} !important`,
+          'background-color': `${colors.bg} !important`,
+          'color': `${colors.text} !important`,
+          'padding': '20px !important',
+          'margin': '0 !important',
+        },
+        'p, div, span, h1, h2, h3, h4, h5, h6': {
+          'font-family': fontFamily + ' !important',
+        }
+      })
+
+      // Force re-render
+      if (epubContainerRef.current) {
+        const rect = epubContainerRef.current.getBoundingClientRect()
+        if (rect.width > 0 && rect.height > 0) {
+          epubRendition.resize(rect.width, rect.height)
+        }
+      }
+    } catch (err) {
+      console.warn('Error applying preferences:', err)
+    }
+  }
+
+  // PDF handlers
+  const handlePdfPageChange = useCallback((page, total) => {
+    const percentage = total > 0 ? ((page + 1) / total) * 100 : 0
+    setProgress(percentage)
+    
+    // Debounced save
+    if (progressTimeoutRef.current) {
+      clearTimeout(progressTimeoutRef.current)
+    }
+    progressTimeoutRef.current = setTimeout(() => {
+      saveProgress(bookId, page.toString(), percentage)
+      track(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
+        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
+        page_number: page + 1,
+      })
+    }, 1000)
+  }, [bookId, track])
+
+  const handlePdfDocumentLoad = useCallback((numPages) => {
+    console.log('PDF loaded with', numPages, 'pages')
+  }, [])
+
+  // Navigation
+  const handleNext = () => {
+    if (epubRendition) {
+      epubRendition.next()
+      track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
+        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+        [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'next',
       })
     }
   }
 
   const handlePrevious = () => {
-    if (rendition) {
-      rendition.prev()
+    if (epubRendition) {
+      epubRendition.prev()
       track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
         [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
         [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'previous',
-        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: progress,
-      })
-    } else if (bookInstance && bookInstance.pdf) {
-      // PDF navigation
-      const prevPage = Math.max(bookInstance.currentPage - 1, 1)
-      renderPDFPage(bookInstance.pdf, prevPage, readerRef.current)
-      bookInstance.currentPage = prevPage
-      if (bookInstance.setCurrentPage) {
-        bookInstance.setCurrentPage(prevPage)
-      }
-      const percentage = (prevPage / bookInstance.totalPages) * 100
-      setProgress(percentage)
-      saveProgress(bookId, prevPage.toString(), percentage)
-      
-      track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'previous',
-        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
-        page_number: prevPage,
       })
     }
   }
 
+  // Settings
   const handlePreferencesChange = (newPrefs) => {
     const updated = { ...preferences, ...newPrefs }
     setPreferences(updated)
     savePreferences(updated)
-    applyTheme()
-    
-    // Track preference changes
-    Object.keys(newPrefs).forEach(key => {
-      const value = newPrefs[key]
-      switch (key) {
-        case 'theme':
-          track(ANALYTICS_EVENTS.THEME_CHANGED, {
-            [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-            [ANALYTICS_PROPERTIES.THEME]: value,
-          })
-          break
-        case 'fontSize':
-          track(ANALYTICS_EVENTS.FONT_SIZE_CHANGED, {
-            [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-            [ANALYTICS_PROPERTIES.FONT_SIZE]: value,
-          })
-          break
-        case 'lineSpacing':
-          track(ANALYTICS_EVENTS.LINE_SPACING_CHANGED, {
-            [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-            [ANALYTICS_PROPERTIES.LINE_SPACING]: value,
-          })
-          break
-        case 'pageWidth':
-          track(ANALYTICS_EVENTS.PAGE_WIDTH_CHANGED, {
-            [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-            [ANALYTICS_PROPERTIES.PAGE_WIDTH]: value,
-          })
-          break
-        case 'fontFamily':
-          track(ANALYTICS_EVENTS.FONT_FAMILY_CHANGED, {
-            [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-            [ANALYTICS_PROPERTIES.FONT_FAMILY]: value,
-          })
-          break
-      }
-    })
   }
 
-  const toggleControls = () => {
+  const toggleControls = (e) => {
+    // Don't toggle when clicking on interactive elements
+    if (e.target.closest('button, input, .reader-header, .reader-footer, .pdf-viewer-container')) {
+      return
+    }
     setShowControls(!showControls)
   }
 
+  const goToLibrary = () => {
+    track(ANALYTICS_EVENTS.NAVIGATION_BACK_TO_LIBRARY, {
+      [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+      [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: progress,
+    })
+    navigate('/')
+  }
+
+  // Render loading state
   if (loading) {
     return (
       <div className="reader-container">
-        <div className="loading">Loading book...</div>
+        <div className="reader-loading">
+          <div className="loading-spinner" />
+          <p>Loading book...</p>
+        </div>
       </div>
     )
   }
 
-  if (!book) {
-    return null
+  // Render error state
+  if (error) {
+    return (
+      <div className="reader-container">
+        <div className="reader-error">
+          <h2>Error</h2>
+          <p>{error}</p>
+          <button onClick={() => navigate('/')}>Back to Library</button>
+        </div>
+      </div>
+    )
   }
+
+  if (!book) return null
+
+  const isPdf = book.format === 'pdf'
+  const isEpub = book.format === 'epub'
 
   return (
     <div className="reader-container" onClick={toggleControls}>
+      {/* Header */}
       {showControls && (
-        <div className="reader-header" onClick={(e) => e.stopPropagation()}>
-          <button className="back-button" onClick={() => {
-            track(ANALYTICS_EVENTS.NAVIGATION_BACK_TO_LIBRARY, {
-              [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-              [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: progress,
-            })
-            navigate('/')
-          }}>
+        <header className="reader-header" onClick={(e) => e.stopPropagation()}>
+          <button className="back-button" onClick={goToLibrary}>
             ← Library
           </button>
           <div className="reader-title">
             <h2>{book.title}</h2>
-            <p>{book.author}</p>
+            {book.author && <p>{book.author}</p>}
           </div>
-          <div className="reader-progress">
-            <div className="progress-bar">
+          <div className="reader-progress-bar">
+            <div className="progress-track">
               <div className="progress-fill" style={{ width: `${progress}%` }} />
             </div>
             <span className="progress-text">{Math.round(progress)}%</span>
           </div>
           <button
             className="settings-button"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!showSettings) {
-                track(ANALYTICS_EVENTS.SETTINGS_OPENED, {
-                  [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-                })
-              }
-              setShowSettings(!showSettings)
-            }}
+            onClick={() => setShowSettings(!showSettings)}
+            aria-label="Settings"
           >
             ⚙️
           </button>
-        </div>
+        </header>
       )}
 
+      {/* Settings Panel */}
       {showSettings && (
         <ReaderControls
           preferences={preferences}
           onPreferencesChange={handlePreferencesChange}
           onClose={() => setShowSettings(false)}
+          bookFormat={book.format}
         />
       )}
 
-      <div className="reader-content" ref={readerRef} onClick={(e) => e.stopPropagation()} />
+      {/* Main Content */}
+      <main className="reader-content">
+        {/* EPUB Reader */}
+        {isEpub && (
+          <div 
+            ref={epubContainerRef} 
+            className="epub-reader"
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
 
-      {showControls && (
-        <div className="reader-footer" onClick={(e) => e.stopPropagation()}>
+        {/* PDF Reader */}
+        {isPdf && book.fileData && (
+          <div className="pdf-reader" onClick={(e) => e.stopPropagation()}>
+            <Worker workerUrl={PDF_WORKER_URL}>
+              <PDFViewer
+                fileData={book.fileData}
+                initialPage={pdfInitialPage}
+                onPageChange={handlePdfPageChange}
+                onDocumentLoad={handlePdfDocumentLoad}
+                theme={preferences.theme}
+              />
+            </Worker>
+          </div>
+        )}
+      </main>
+
+      {/* Footer - only show for EPUB (PDF has built-in navigation) */}
+      {showControls && isEpub && (
+        <footer className="reader-footer" onClick={(e) => e.stopPropagation()}>
           <button className="nav-button" onClick={handlePrevious}>
             ← Previous
           </button>
           <button className="nav-button" onClick={handleNext}>
             Next →
           </button>
-        </div>
+        </footer>
       )}
     </div>
   )
 }
 
 export default Reader
-
