@@ -1,3 +1,10 @@
+// Helper function to clone ArrayBuffer
+const cloneArrayBuffer = (buffer) => {
+  const cloned = new ArrayBuffer(buffer.byteLength)
+  new Uint8Array(cloned).set(new Uint8Array(buffer))
+  return cloned
+}
+
 // Parse EPUB file
 export const parseEPUB = async (file) => {
   return new Promise((resolve, reject) => {
@@ -5,8 +12,11 @@ export const parseEPUB = async (file) => {
     reader.onload = async (e) => {
       try {
         const arrayBuffer = e.target.result
+        // Clone ArrayBuffer before using with EPUB.js to prevent detachment
+        const clonedBuffer = cloneArrayBuffer(arrayBuffer)
+        
         const EPUB = (await import('epubjs')).default
-        const book = EPUB(arrayBuffer)
+        const book = EPUB(clonedBuffer)
         
         await book.loaded.metadata
         const metadata = await book.loaded.metadata
@@ -22,7 +32,7 @@ export const parseEPUB = async (file) => {
           console.warn('No cover found', err)
         }
         
-        // Store book data
+        // Store book data with original ArrayBuffer (not the cloned one)
         const bookData = {
           title: metadata.title || file.name.replace(/\.epub$/i, ''),
           author: metadata.creator || 'Unknown Author',
@@ -34,7 +44,7 @@ export const parseEPUB = async (file) => {
             language: metadata.language,
             description: metadata.description
           },
-          fileData: arrayBuffer
+          fileData: arrayBuffer // Use original buffer for storage
         }
         
         resolve(bookData)
@@ -54,12 +64,14 @@ export const parsePDF = async (file) => {
     reader.onload = async (e) => {
       try {
         const arrayBuffer = e.target.result
+        // Clone ArrayBuffer before using with PDF.js to prevent detachment
+        const clonedBuffer = cloneArrayBuffer(arrayBuffer)
         
         // Use PDF.js to get metadata
         const pdfjsLib = await import('pdfjs-dist')
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
         
-        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+        const loadingTask = pdfjsLib.getDocument({ data: clonedBuffer })
         const pdf = await loadingTask.promise
         
         const metadata = await pdf.getMetadata()
@@ -95,7 +107,7 @@ export const parsePDF = async (file) => {
             subject: info.Subject,
             keywords: info.Keywords
           },
-          fileData: arrayBuffer,
+          fileData: arrayBuffer, // Use original buffer for storage
           pageCount: pdf.numPages
         }
         

@@ -10,6 +10,7 @@
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@vercel/analytics": "^1.6.1",
     "dexie": "^3.2.4",
     "epubjs": "^0.3.88",
     "pdfjs-dist": "^3.11.174",

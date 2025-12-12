@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { getAllBooks, deleteBook, getProgress, addBook } from '../utils/storage'
 import { parseBookFile } from '../utils/bookParser'
 import { getPreferences } from '../utils/storage'
+import { useAnalytics, ANALYTICS_EVENTS, ANALYTICS_PROPERTIES } from '../utils/analytics'
 import './Library.css'
 
 function Library() {
@@ -10,11 +11,22 @@ function Library() {
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const navigate = useNavigate()
+  const { track } = useAnalytics()
 
   useEffect(() => {
     loadBooks()
     applyTheme()
   }, [])
+
+  useEffect(() => {
+    if (!loading) {
+      // Track library view after books are loaded
+      track(ANALYTICS_EVENTS.LIBRARY_VIEWED, {
+        book_count: books.length,
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, books.length])
 
   const loadBooks = async () => {
     try {
@@ -51,6 +63,17 @@ function Library() {
     try {
       const bookData = await parseBookFile(file)
       const bookId = await addBook(bookData)
+      
+      // Track book upload
+      track(ANALYTICS_EVENTS.BOOK_UPLOADED, {
+        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+        [ANALYTICS_PROPERTIES.BOOK_TITLE]: bookData.title,
+        [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: bookData.author || 'Unknown',
+        [ANALYTICS_PROPERTIES.BOOK_FORMAT]: bookData.format,
+        [ANALYTICS_PROPERTIES.BOOK_SIZE]: file.size,
+        upload_method: 'file_picker',
+      })
+      
       await loadBooks()
       // Navigate to reader
       navigate(`/reader/${bookId}`)
@@ -86,6 +109,17 @@ function Library() {
     try {
       const bookData = await parseBookFile(file)
       const bookId = await addBook(bookData)
+      
+      // Track book upload via drag and drop
+      track(ANALYTICS_EVENTS.BOOK_UPLOADED, {
+        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+        [ANALYTICS_PROPERTIES.BOOK_TITLE]: bookData.title,
+        [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: bookData.author || 'Unknown',
+        [ANALYTICS_PROPERTIES.BOOK_FORMAT]: bookData.format,
+        [ANALYTICS_PROPERTIES.BOOK_SIZE]: file.size,
+        upload_method: 'drag_and_drop',
+      })
+      
       await loadBooks()
       navigate(`/reader/${bookId}`)
     } catch (error) {
@@ -100,7 +134,16 @@ function Library() {
     e.stopPropagation()
     if (window.confirm('Are you sure you want to remove this book from your library?')) {
       try {
+        const book = books.find(b => b.id === bookId)
         await deleteBook(bookId)
+        
+        // Track book deletion
+        track(ANALYTICS_EVENTS.BOOK_DELETED, {
+          [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+          [ANALYTICS_PROPERTIES.BOOK_TITLE]: book?.title || 'Unknown',
+          [ANALYTICS_PROPERTIES.BOOK_FORMAT]: book?.format || 'Unknown',
+        })
+        
         await loadBooks()
       } catch (error) {
         console.error('Error deleting book:', error)
@@ -110,6 +153,18 @@ function Library() {
   }
 
   const handleBookClick = (bookId) => {
+    const book = books.find(b => b.id === bookId)
+    
+    // Track book opened from library
+    track(ANALYTICS_EVENTS.BOOK_OPENED, {
+      [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
+      [ANALYTICS_PROPERTIES.BOOK_TITLE]: book?.title || 'Unknown',
+      [ANALYTICS_PROPERTIES.BOOK_AUTHOR]: book?.author || 'Unknown',
+      [ANALYTICS_PROPERTIES.BOOK_FORMAT]: book?.format || 'Unknown',
+      [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: book?.progress || 0,
+      source: 'library',
+    })
+    
     navigate(`/reader/${bookId}`)
   }
 
