@@ -340,6 +340,7 @@ iReader is a free, open-source, web-based e-book reader that delivers a Kindle-l
 - Reading progress syncs
 - Annotations sync
 - Preferences sync
+- Smoother experience due to data storage on server instead of client
 - **Profile page**:
 - Reading stats overview
 - Account settings
@@ -445,7 +446,7 @@ iReader is a free, open-source, web-based e-book reader that delivers a Kindle-l
 **Technical Considerations:**
 
 - Reading speed calculation: Track time spent reading vs. content consumed
-- Streak logic: Daily reading activity detection (minimum threshold: e.g., 5 minutes)
+- Streak logic: Daily reading activity detection (minimum threshold: e.g., 3 pages)
 
 #### 3.3.5 Distraction-Free Mode
 
@@ -493,7 +494,7 @@ iReader is a free, open-source, web-based e-book reader that delivers a Kindle-l
 **Guest vs Signed-in Behavior:**
 
 - **Guest mode**: All annotations local, exports work locally (download file)
-- **Signed-in mode**: Annotations sync across devices, exports can be saved to cloud or downloaded
+- **Signed-in mode**: Annotations are backed up and sync across devices, exports can be saved to cloud or downloaded
 
 ### 3.5 Dictionary, X-Ray-like Context & Knowledge Features
 
