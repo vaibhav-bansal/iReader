@@ -12,6 +12,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import { useProgressStore } from '../store/progressStore'
 import BookLoadingScreen from '../components/BookLoadingScreen'
+import { trackEvent } from '../lib/posthog'
 
 function Reader() {
   const { bookId } = useParams()
@@ -37,22 +38,42 @@ function Reader() {
   // Navigation functions
   const goToPreviousPage = () => {
     if (currentPage > 1) {
+      trackEvent('page_navigated', {
+        book_id: bookId,
+        page: currentPage - 1,
+        method: 'previous_button',
+      })
       setCurrentPage(prev => prev - 1)
     }
   }
 
   const goToNextPage = () => {
     if (currentPage < numPages) {
+      trackEvent('page_navigated', {
+        book_id: bookId,
+        page: currentPage + 1,
+        method: 'next_button',
+      })
       setCurrentPage(prev => prev + 1)
     }
   }
 
   const goToFirstPage = () => {
+    trackEvent('page_navigated', {
+      book_id: bookId,
+      page: 1,
+      method: 'first_page',
+    })
     setCurrentPage(1)
   }
 
   const goToLastPage = () => {
     if (numPages) {
+      trackEvent('page_navigated', {
+        book_id: bookId,
+        page: numPages,
+        method: 'last_page',
+      })
       setCurrentPage(numPages)
     }
   }
@@ -60,10 +81,20 @@ function Reader() {
   const handlePageJump = () => {
     const pageNum = parseInt(pageJumpInput, 10)
     if (pageNum && pageNum >= 1 && pageNum <= numPages) {
+      trackEvent('page_jumped', {
+        book_id: bookId,
+        page: pageNum,
+        method: 'page_jump_modal',
+      })
       setCurrentPage(pageNum)
       setShowPageJumpModal(false)
       setPageJumpInput('')
     } else {
+      trackEvent('page_jump_failed', {
+        book_id: bookId,
+        attempted_page: pageJumpInput,
+        reason: 'invalid_page_number',
+      })
       toast.error(`Please enter a page number between 1 and ${numPages}`)
     }
   }
@@ -334,6 +365,13 @@ function Reader() {
     setNumPages(totalPages)
     updateTotalPagesMutation.mutate(totalPages)
     
+    // Track PDF loaded
+    trackEvent('pdf_loaded', {
+      book_id: bookId,
+      total_pages: totalPages,
+      has_saved_progress: !!readingProgress?.current_page,
+    })
+    
     // Restore reading position if available (only once)
     if (readingProgress?.current_page && !hasRestoredRef.current) {
       const targetPage = Math.min(Math.max(1, readingProgress.current_page), totalPages)
@@ -415,28 +453,53 @@ function Reader() {
         case 'ArrowLeft':
           e.preventDefault()
           if (currentPage > 1) {
+            trackEvent('page_navigated', {
+              book_id: bookId,
+              page: currentPage - 1,
+              method: 'keyboard_arrow_left',
+            })
             setCurrentPage(prev => prev - 1)
           }
           break
         case 'ArrowRight':
           e.preventDefault()
           if (currentPage < numPages) {
+            trackEvent('page_navigated', {
+              book_id: bookId,
+              page: currentPage + 1,
+              method: 'keyboard_arrow_right',
+            })
             setCurrentPage(prev => prev + 1)
           }
           break
         case ' ':
           e.preventDefault()
           if (currentPage < numPages) {
+            trackEvent('page_navigated', {
+              book_id: bookId,
+              page: currentPage + 1,
+              method: 'keyboard_space',
+            })
             setCurrentPage(prev => prev + 1)
           }
           break
         case 'Home':
           e.preventDefault()
+          trackEvent('page_navigated', {
+            book_id: bookId,
+            page: 1,
+            method: 'keyboard_home',
+          })
           setCurrentPage(1)
           break
         case 'End':
           e.preventDefault()
           if (numPages) {
+            trackEvent('page_navigated', {
+              book_id: bookId,
+              page: numPages,
+              method: 'keyboard_end',
+            })
             setCurrentPage(numPages)
           }
           break
@@ -445,6 +508,10 @@ function Reader() {
           // Go to page (g key)
           if (!e.ctrlKey && !e.metaKey) {
             e.preventDefault()
+              trackEvent('page_jump_modal_opened', {
+                book_id: bookId,
+                method: 'keyboard_g',
+              })
             setShowPageJumpModal(true)
           }
           break
@@ -490,9 +557,19 @@ function Reader() {
       if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > minSwipeDistance) {
         if (deltaX > 0 && currentPage > 1) {
           // Swipe right = previous page
+          trackEvent('page_navigated', {
+            book_id: bookId,
+            page: currentPage - 1,
+            method: 'swipe_right',
+          })
           setCurrentPage(prev => prev - 1)
         } else if (deltaX < 0 && currentPage < numPages) {
           // Swipe left = next page
+          trackEvent('page_navigated', {
+            book_id: bookId,
+            page: currentPage + 1,
+            method: 'swipe_left',
+          })
           setCurrentPage(prev => prev + 1)
         }
       }
@@ -500,9 +577,19 @@ function Reader() {
       else if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > minSwipeDistance) {
         if (deltaY > 0 && currentPage > 1) {
           // Swipe down = previous page
+          trackEvent('page_navigated', {
+            book_id: bookId,
+            page: currentPage - 1,
+            method: 'swipe_down',
+          })
           setCurrentPage(prev => prev - 1)
         } else if (deltaY < 0 && currentPage < numPages) {
           // Swipe up = next page
+          trackEvent('page_navigated', {
+            book_id: bookId,
+            page: currentPage + 1,
+            method: 'swipe_up',
+          })
           setCurrentPage(prev => prev + 1)
         }
       }
@@ -569,6 +656,13 @@ function Reader() {
           {
             onSuccess: (data) => {
               console.log('✅ Progress saved successfully to database:', data)
+              // Track progress saved
+              trackEvent('reading_progress_saved', {
+                book_id: bookId,
+                page: currentPage,
+                zoom_level: scale,
+                progress_percentage: numPages ? Math.round((currentPage / numPages) * 100) : null,
+              })
               // Mark as saved after successful save
               lastSavedPageRef.current = currentPage
               pendingSaveRef.current = null
@@ -661,7 +755,15 @@ function Reader() {
       <div className="bg-white shadow-sm sticky top-0 z-10 p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              trackEvent('reader_exited', {
+                book_id: bookId,
+                current_page: currentPage,
+                zoom_level: scale,
+                progress_percentage: numPages ? Math.round((currentPage / numPages) * 100) : null,
+              })
+              navigate('/')
+            }}
             className="text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
           >
             ← Back to Library
@@ -671,6 +773,11 @@ function Reader() {
             <button
               onClick={() => {
                 const newScale = Math.max(0.5, scale - 0.25)
+              trackEvent('zoom_changed', {
+                book_id: bookId,
+                zoom_level: newScale,
+                method: 'zoom_out_button',
+              })
                 setScale(newScale)
                 clearTimeout(window.zoomSaveTimeout)
                 window.zoomSaveTimeout = setTimeout(() => {
@@ -685,6 +792,11 @@ function Reader() {
             <button
               onClick={() => {
                 const newScale = Math.min(3, scale + 0.25)
+                trackEvent('zoom_changed', {
+                  book_id: bookId,
+                  zoom_level: newScale,
+                  method: 'zoom_in_button',
+                })
                 setScale(newScale)
                 clearTimeout(window.zoomSaveTimeout)
                 window.zoomSaveTimeout = setTimeout(() => {
@@ -764,7 +876,13 @@ function Reader() {
             {/* Page Info and Jump */}
             <div className="flex items-center gap-3 flex-1 justify-center">
               <button
-                onClick={() => setShowPageJumpModal(true)}
+                onClick={() => {
+                trackEvent('page_jump_modal_opened', {
+                  book_id: bookId,
+                  method: 'page_info_click',
+                })
+                  setShowPageJumpModal(true)
+                }}
                 className="text-sm text-gray-700 hover:text-blue-600 font-medium px-3 py-1 rounded hover:bg-gray-100 transition-colors"
               >
                 Page {currentPage} of {numPages || '...'}
@@ -795,6 +913,10 @@ function Reader() {
           <div
             className="fixed inset-0 bg-black bg-opacity-50 z-50"
             onClick={() => {
+              trackEvent('page_jump_modal_closed', {
+                book_id: bookId,
+                method: 'backdrop_click',
+              })
               setShowPageJumpModal(false)
               setPageJumpInput('')
             }}
@@ -834,6 +956,10 @@ function Reader() {
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => {
+                    trackEvent('page_jump_modal_closed', {
+                      book_id: bookId,
+                      method: 'cancel_button',
+                    })
                     setShowPageJumpModal(false)
                     setPageJumpInput('')
                   }}

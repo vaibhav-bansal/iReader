@@ -9,6 +9,7 @@ import BookCover from '../components/BookCover'
 import BookCoverSkeleton from '../components/BookCoverSkeleton'
 import '../lib/pdfWorker' // Ensure PDF.js worker is configured
 import { generateThumbnail } from '../lib/thumbnailGenerator'
+import { trackEvent } from '../lib/posthog'
 
 function Library() {
   const navigate = useNavigate()
@@ -119,7 +120,7 @@ function Library() {
       // Get book to find file paths
       const { data: book } = await supabase
         .from('books')
-        .select('file_path, thumbnail_path')
+        .select('file_path, thumbnail_path, title, file_size, total_pages')
         .eq('id', bookId)
         .eq('user_id', user.id)
         .single()
@@ -146,31 +147,54 @@ function Library() {
         .eq('user_id', user.id)
 
       if (dbError) throw dbError
+
+      // Return book data for tracking
+      return book
     },
-    onSuccess: () => {
+    onSuccess: (book) => {
       queryClient.invalidateQueries({ queryKey: ['books'] })
       queryClient.invalidateQueries({ queryKey: ['coverUrls'] })
       toast.success('Book deleted successfully')
       setDeleteConfirmation(null)
+      
+      trackEvent('book_deleted', {
+        book_id: book.id,
+        file_size: book.file_size,
+      })
     },
-    onError: (error) => {
+    onError: (error, bookId) => {
       toast.error(error.message || 'Failed to delete book')
+      trackEvent('book_delete_failed', {
+        book_id: bookId,
+        error: error.message || 'Unknown error',
+      })
     },
   })
 
   const handleDeleteClick = (e, bookId, bookTitle) => {
     e.stopPropagation() // Prevent navigation
+    trackEvent('book_delete_clicked', {
+      book_id: bookId,
+    })
     setDeleteConfirmation({ bookId, title: bookTitle })
   }
 
   const handleDeleteConfirm = () => {
     if (deleteConfirmation) {
+      trackEvent('book_delete_confirmed', {
+        book_id: deleteConfirmation.bookId,
+      })
       deleteBookMutation.mutate(deleteConfirmation.bookId)
       setDeleteConfirmation(null)
     }
   }
 
   const handleDeleteCancel = () => {
+    if (deleteConfirmation) {
+      trackEvent('book_delete_cancelled', {
+        book_id: deleteConfirmation.bookId,
+      })
+    }
     setDeleteConfirmation(null)
   }
 
@@ -195,14 +219,25 @@ function Library() {
   const onDrop = async (acceptedFiles) => {
     const pdfFile = acceptedFiles.find(file => file.type === 'application/pdf')
     if (!pdfFile) {
+      trackEvent('book_upload_rejected', {
+        reason: 'not_pdf',
+      })
       toast.error('Please upload a PDF file')
       return
     }
+
+    // Track upload start
+    trackEvent('book_upload_started', {
+      file_size: pdfFile.size, // file_type is always PDF, file_name can be sensitive
+    })
 
     setUploading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
+        trackEvent('book_upload_failed', {
+          reason: 'not_authenticated',
+        })
         toast.error('Please sign in to upload books')
         return
       }
@@ -220,6 +255,7 @@ function Library() {
 
       // Generate and upload thumbnail
       let thumbnailPath = null
+      let thumbnailGenerated = false
       try {
         const thumbnailBlob = await generateThumbnail(pdfFile)
         const thumbnailFileName = `${user.id}/${timestamp}_thumb.jpg`
@@ -235,6 +271,7 @@ function Library() {
           // Continue without thumbnail - not critical
         } else {
           thumbnailPath = thumbnailFileName
+          thumbnailGenerated = true
         }
       } catch (thumbnailError) {
         console.warn('Thumbnail generation error:', thumbnailError)
@@ -258,10 +295,21 @@ function Library() {
 
       if (dbError) throw dbError
 
+      // Track successful upload
+      trackEvent('book_uploaded', {
+        book_id: bookData.id,
+        file_size: pdfFile.size,
+        thumbnail_generated: thumbnailGenerated,
+      })
+
       toast.success('Book uploaded successfully!')
       refetch()
     } catch (error) {
       console.error('Upload error:', error)
+      trackEvent('book_upload_failed', {
+        file_size: pdfFile.size,
+        error: error.message || 'Unknown error',
+      })
       toast.error(error.message || 'Failed to upload book')
     } finally {
       setUploading(false)
@@ -365,7 +413,14 @@ function Library() {
                   onMouseLeave={() => setHoveredBookId(null)}
                   className="group relative bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-xl transition-all duration-200"
                   style={{ aspectRatio: '2/3' }}
-                  onClick={() => navigate(`/reader/${book.id}`)}
+                  onClick={() => {
+                    trackEvent('book_opened', {
+                      book_id: book.id,
+                      current_page: book.current_page || null,
+                      has_progress: !!book.current_page,
+                    })
+                    navigate(`/reader/${book.id}`)
+                  }}
                 >
                   {/* Delete button - appears on hover */}
                   {hoveredBookId === book.id && (
