@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 // Import worker config FIRST - this sets up pdfjs before Document/Page are used
-import '../lib/pdfWorker'
-import { Document, Page } from 'react-pdf'
+import { pdfWorkerSrc } from '../lib/pdfWorker'
+import { Document, Page, pdfjs } from 'react-pdf'
+
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -613,6 +615,10 @@ function Reader() {
     pdfUrlLoading || 
     !pdfUrl
 
+  const documentOptions = useMemo(() => ({
+    workerSrc: pdfWorkerSrc,
+  }), [])
+
   if (showLoadingScreen) {
     return <BookLoadingScreen messageIndex={0} />
   }
@@ -699,6 +705,7 @@ function Reader() {
           {pdfUrl && (
             <Document
               file={pdfUrl}
+              options={documentOptions}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
               loading={

@@ -7,3 +7,5 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 console.log('PDF.js worker configured:', pdfjs.GlobalWorkerOptions.workerSrc)
+
+export const pdfWorkerSrc = workerUrl
