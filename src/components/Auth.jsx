@@ -86,7 +86,7 @@ function Auth({ children }) {
           </p>
           <button
             onClick={signInWithGoogle}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -118,7 +118,7 @@ function Auth({ children }) {
       <div className="absolute top-4 right-4">
         <button
           onClick={signOut}
-          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium"
+          className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm font-medium cursor-pointer"
         >
           Sign Out
         </button>

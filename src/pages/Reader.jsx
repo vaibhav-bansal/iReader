@@ -1,19 +1,15 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Document, Page, pdfjs } from 'react-pdf'
+// Import worker config FIRST - this sets up pdfjs before Document/Page are used
+import '../lib/pdfWorker'
+import { Document, Page } from 'react-pdf'
 import InfiniteScroll from 'react-infinite-scroll-component'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import { useProgressStore } from '../store/progressStore'
-
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url,
-).toString()
 
 function Reader() {
   const { bookId } = useParams()
@@ -25,10 +21,16 @@ function Reader() {
 
   const { progress, setProgress } = useProgressStore()
 
+  // Debug: Log when component renders
+  useEffect(() => {
+    console.log('Reader component mounted/rendered, bookId:', bookId)
+  }, [bookId])
+
   // Fetch book data
   const { data: book, isLoading: bookLoading, error: bookError } = useQuery({
     queryKey: ['book', bookId],
     queryFn: async () => {
+      console.log('Fetching book data for bookId:', bookId)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
@@ -40,19 +42,22 @@ function Reader() {
         .single()
 
       if (error) throw error
+      console.log('Book data fetched:', data)
       return data
     },
+    enabled: !!bookId, // Only run if bookId exists
     retry: 2,
   })
 
   useEffect(() => {
     if (bookError) {
+      console.error('Book load error:', bookError)
       toast.error(bookError.message || 'Failed to load book')
     }
   }, [bookError])
 
   // Get PDF URL from Supabase Storage
-  const { data: pdfUrl, error: pdfUrlError } = useQuery({
+  const { data: pdfUrl, error: pdfUrlError, isLoading: pdfUrlLoading } = useQuery({
     queryKey: ['pdfUrl', book?.file_path],
     queryFn: async () => {
       if (!book?.file_path) return null
@@ -70,10 +75,18 @@ function Reader() {
   })
 
   useEffect(() => {
-    if (pdfUrlError) {
-      toast.error('Failed to load PDF file')
+    if (pdfUrl) {
+      console.log('PDF URL loaded successfully:', pdfUrl)
     }
-  }, [pdfUrlError])
+  }, [pdfUrl])
+
+  useEffect(() => {
+    if (pdfUrlError) {
+      console.error('PDF URL error:', pdfUrlError)
+      console.error('Book file_path:', book?.file_path)
+      toast.error(`Failed to load PDF file: ${pdfUrlError.message || 'Unknown error'}`)
+    }
+  }, [pdfUrlError, book?.file_path])
 
   // Fetch reading progress
   const { data: readingProgress } = useQuery({
@@ -165,7 +178,13 @@ function Reader() {
 
   const onDocumentLoadError = (error) => {
     console.error('PDF load error:', error)
-    toast.error('Failed to load PDF document')
+    console.error('PDF URL:', pdfUrl)
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    })
+    toast.error(`Failed to load PDF document: ${error.message || 'Unknown error'}`)
   }
 
   const loadMorePages = () => {
@@ -198,7 +217,7 @@ function Reader() {
     }
   }, [numPages, bookId, syncProgressMutation, setProgress])
 
-  if (bookLoading) {
+  if (bookLoading || pdfUrlLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg">Loading book...</div>
@@ -206,10 +225,34 @@ function Reader() {
     )
   }
 
-  if (!book || !pdfUrl) {
+  if (bookError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-red-600">Failed to load book: {bookError.message}</div>
+      </div>
+    )
+  }
+
+  if (!book) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg text-red-600">Book not found</div>
+      </div>
+    )
+  }
+
+  if (pdfUrlError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-red-600">Failed to load PDF: {pdfUrlError.message}</div>
+      </div>
+    )
+  }
+
+  if (!pdfUrl) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-red-600">PDF file not found</div>
       </div>
     )
   }
@@ -223,7 +266,7 @@ function Reader() {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button
             onClick={() => navigate('/')}
-            className="text-blue-600 hover:text-blue-800 font-medium"
+            className="text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
           >
             ← Back to Library
           </button>
@@ -231,14 +274,14 @@ function Reader() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
-              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+              className="px-3 py-1 bg-gray-200 rounded-sm hover:bg-gray-300 cursor-pointer"
             >
               −
             </button>
             <span className="text-sm">{(scale * 100).toFixed(0)}%</span>
             <button
               onClick={() => setScale(prev => Math.min(3, prev + 0.25))}
-              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+              className="px-3 py-1 bg-gray-200 rounded-sm hover:bg-gray-300 cursor-pointer"
             >
               +
             </button>
@@ -277,7 +320,7 @@ function Reader() {
                 <div className="text-lg mb-2">Failed to load PDF</div>
                 <button
                   onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-sm hover:bg-blue-700 cursor-pointer"
                 >
                   Retry
                 </button>

@@ -140,7 +140,7 @@ function Library() {
             >
               <h2 className="text-xl font-semibold mb-2 truncate">{book.title}</h2>
               <p className="text-sm text-gray-500 mb-4">{book.total_pages} pages</p>
-              <button className="text-blue-600 hover:text-blue-800 font-medium">
+              <button className="text-blue-600 hover:text-blue-800 font-medium cursor-pointer">
                 Read →
               </button>
             </div>
