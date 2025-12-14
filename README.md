@@ -23,6 +23,7 @@ A lightweight web-based PDF reader with infinite scroll, progress tracking, and 
 - **Backend**: Supabase (Auth, Database, Storage)
 - **Styling**: Tailwind CSS
 - **Notifications**: react-hot-toast
+- **Analytics**: PostHog (with session replays)
 
 ## Getting Started
 
@@ -55,9 +56,13 @@ npm install
 ```env
 VITE_SUPABASE_URL=your_supabase_project_url
 VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key_here
+VITE_POSTHOG_KEY=your_posthog_project_api_key
+VITE_POSTHOG_HOST=https://app.posthog.com
 ```
 
-**Note**: This app uses Supabase's new publishable keys (format: `sb_publishable_...`). Get your publishable key from Supabase Dashboard → Project Settings → API.
+**Note**: 
+- This app uses Supabase's new publishable keys (format: `sb_publishable_...`). Get your publishable key from Supabase Dashboard → Project Settings → API.
+- PostHog is used for analytics and session replays. Get your PostHog key from PostHog Dashboard → Project Settings → Project API Key. If using PostHog Cloud, use `https://app.posthog.com` as the host. For self-hosted instances, use your PostHog instance URL.
 
 5. Start development server:
 ```bash
@@ -77,6 +82,7 @@ src/
     Reader.jsx        # PDF reader with infinite scroll
   lib/
     supabase.js       # Supabase client initialization
+    posthog.js        # PostHog analytics initialization
   store/
     progressStore.js  # Zustand store for reading progress
   App.jsx             # Main app component with routing
@@ -92,6 +98,8 @@ src/
 3. Add environment variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `VITE_POSTHOG_KEY` (optional, for analytics)
+   - `VITE_POSTHOG_HOST` (optional, defaults to `https://app.posthog.com`)
 4. Deploy!
 
 The app will be automatically deployed on every push to main branch.

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
+import { identifyUser, resetUser, trackEvent } from '../lib/posthog'
 
 function Auth({ children }) {
   const [loading, setLoading] = useState(true)
@@ -26,13 +27,45 @@ function Auth({ children }) {
     // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setLoading(false)
+      // Identify user if session exists
+      if (session?.user) {
+        identifyUser(
+          session.user.id,
+          session.user.email || session.user.user_metadata?.email || 'unknown',
+          {
+            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+            provider: session.user.app_metadata?.provider,
+            created_at: session.user.created_at,
+          }
+        )
+      }
     })
 
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setLoading(false)
+      
+      // Handle authentication events
+      if (event === 'SIGNED_IN' && session?.user) {
+        const email = session.user.email || session.user.user_metadata?.email || 'unknown'
+        identifyUser(
+          session.user.id,
+          email,
+          {
+            name: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+            provider: session.user.app_metadata?.provider,
+            created_at: session.user.created_at,
+          }
+        )
+        trackEvent('user_signed_in', {
+          method: 'google_oauth',
+        })
+      } else if (event === 'SIGNED_OUT') {
+        resetUser()
+        trackEvent('user_signed_out')
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -40,6 +73,11 @@ function Auth({ children }) {
 
   const signInWithGoogle = async () => {
     try {
+      // Track sign in attempt
+      trackEvent('sign_in_attempted', {
+        method: 'google_oauth',
+      })
+      
       // Use current origin (automatically works for localhost and production)
       const redirectTo = window.location.origin
       console.log('OAuth redirect URL:', redirectTo)
@@ -55,19 +93,30 @@ function Auth({ children }) {
       // then back to the app with the session
     } catch (error) {
       console.error('Error signing in:', error)
+      trackEvent('sign_in_failed', {
+        method: 'google_oauth',
+        error: error.message || 'Unknown error',
+      })
       toast.error(error.message || 'Failed to sign in')
     }
   }
 
   const signOut = async () => {
     try {
+      trackEvent('sign_out_attempted')
       const { error } = await supabase.auth.signOut()
       if (error) throw error
+      
+      resetUser()
+      trackEvent('user_signed_out')
       toast.success('Signed out successfully')
       queryClient.clear() // Clear all cached queries
       refetchSession()
     } catch (error) {
       console.error('Error signing out:', error)
+      trackEvent('sign_out_failed', {
+        error: error.message || 'Unknown error',
+      })
       toast.error(error.message || 'Failed to sign out')
     }
   }
