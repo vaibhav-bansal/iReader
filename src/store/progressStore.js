@@ -4,13 +4,13 @@ import { persist } from 'zustand/middleware'
 export const useProgressStore = create(
   persist(
     (set) => ({
-      progress: {}, // { bookId: { page, scrollPosition } }
+      progress: {}, // { bookId: { page } }
       
-      setProgress: (bookId, page, scrollPosition) => {
+      setProgress: (bookId, page) => {
         set((state) => ({
           progress: {
             ...state.progress,
-            [bookId]: { page, scrollPosition },
+            [bookId]: { page },
           },
         }))
       },

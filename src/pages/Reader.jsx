@@ -1,36 +1,33 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 // Import worker config FIRST - this sets up pdfjs before Document/Page are used
 import '../lib/pdfWorker'
 import { Document, Page } from 'react-pdf'
-import InfiniteScroll from 'react-infinite-scroll-component'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import { useProgressStore } from '../store/progressStore'
+import BookLoadingScreen from '../components/BookLoadingScreen'
 
 function Reader() {
   const { bookId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [numPages, setNumPages] = useState(null)
-  const [loadedPages, setLoadedPages] = useState(1)
+  const [currentPage, setCurrentPage] = useState(1)
   const [scale, setScale] = useState(1.5)
+  const [isCalculatingZoom, setIsCalculatingZoom] = useState(true)
+  const pageHeightRef = useRef(null)
+  const lastSavedPageRef = useRef(null)
 
-  const { progress, setProgress } = useProgressStore()
-
-  // Debug: Log when component renders
-  useEffect(() => {
-    console.log('Reader component mounted/rendered, bookId:', bookId)
-  }, [bookId])
+  const { setProgress } = useProgressStore()
 
   // Fetch book data
   const { data: book, isLoading: bookLoading, error: bookError } = useQuery({
     queryKey: ['book', bookId],
     queryFn: async () => {
-      console.log('Fetching book data for bookId:', bookId)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
@@ -42,10 +39,9 @@ function Reader() {
         .single()
 
       if (error) throw error
-      console.log('Book data fetched:', data)
       return data
     },
-    enabled: !!bookId, // Only run if bookId exists
+    enabled: !!bookId,
     retry: 2,
   })
 
@@ -62,7 +58,6 @@ function Reader() {
     queryFn: async () => {
       if (!book?.file_path) return null
       
-      // For private buckets, create a signed URL
       const { data, error } = await supabase.storage
         .from('books')
         .createSignedUrl(book.file_path, 3600) // 1 hour expiry
@@ -75,21 +70,14 @@ function Reader() {
   })
 
   useEffect(() => {
-    if (pdfUrl) {
-      console.log('PDF URL loaded successfully:', pdfUrl)
-    }
-  }, [pdfUrl])
-
-  useEffect(() => {
     if (pdfUrlError) {
       console.error('PDF URL error:', pdfUrlError)
-      console.error('Book file_path:', book?.file_path)
       toast.error(`Failed to load PDF file: ${pdfUrlError.message || 'Unknown error'}`)
     }
-  }, [pdfUrlError, book?.file_path])
+  }, [pdfUrlError])
 
   // Fetch reading progress
-  const { data: readingProgress } = useQuery({
+  const { data: readingProgress, isLoading: readingProgressLoading } = useQuery({
     queryKey: ['readingProgress', bookId],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -108,9 +96,17 @@ function Reader() {
     enabled: !!bookId,
   })
 
+  // Restore saved zoom level when reading progress loads
+  useEffect(() => {
+    if (readingProgress?.zoom_level && isCalculatingZoom) {
+      setScale(readingProgress.zoom_level)
+      setIsCalculatingZoom(false)
+    }
+  }, [readingProgress?.zoom_level, isCalculatingZoom])
+
   // Sync progress mutation
   const syncProgressMutation = useMutation({
-    mutationFn: async ({ page, scrollPosition }) => {
+    mutationFn: async ({ page, zoomLevel }) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
@@ -118,8 +114,8 @@ function Reader() {
         user_id: user.id,
         book_id: bookId,
         current_page: page,
-        scroll_position: scrollPosition,
         last_read_at: new Date().toISOString(),
+        ...(zoomLevel !== undefined && { zoom_level: zoomLevel }),
       }
 
       const { error } = await supabase
@@ -135,7 +131,37 @@ function Reader() {
     },
     onError: (error) => {
       console.error('Progress sync error:', error)
-      // Don't show toast for progress sync errors - they're not critical
+    },
+    retry: 1,
+  })
+
+  // Save zoom level mutation (debounced)
+  const saveZoomMutation = useMutation({
+    mutationFn: async (zoomLevel) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      const progressData = {
+        user_id: user.id,
+        book_id: bookId,
+        zoom_level: zoomLevel,
+        ...(readingProgress?.current_page && { current_page: readingProgress.current_page }),
+        last_read_at: new Date().toISOString(),
+      }
+
+      const { error } = await supabase
+        .from('reading_progress')
+        .upsert(progressData, {
+          onConflict: 'user_id,book_id',
+        })
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['readingProgress', bookId] })
+    },
+    onError: (error) => {
+      console.error('Zoom save error:', error)
     },
     retry: 1,
   })
@@ -159,70 +185,87 @@ function Reader() {
     setNumPages(totalPages)
     updateTotalPagesMutation.mutate(totalPages)
     
-    // Restore reading position
+    // Restore reading position if available
     if (readingProgress?.current_page) {
-      const targetPage = Math.min(readingProgress.current_page, totalPages)
-      setLoadedPages(Math.max(targetPage + 2, 3))
-      // Scroll to saved position after a short delay
+      const targetPage = Math.min(Math.max(1, readingProgress.current_page), totalPages)
+      setCurrentPage(targetPage)
+    }
+  }
+
+  // Handle restoration when readingProgress loads after document
+  useEffect(() => {
+    if (numPages && readingProgress?.current_page) {
+      const targetPage = Math.min(Math.max(1, readingProgress.current_page), numPages)
+      if (targetPage !== currentPage) {
+        setCurrentPage(targetPage)
+      }
+    }
+  }, [numPages, readingProgress?.current_page, currentPage])
+
+  // Handle page load success - calculate fit-to-height zoom
+  const onPageLoadSuccess = (pageNum) => {
+    // Calculate fit-to-height zoom from first page if we don't have a saved zoom
+    if (pageNum === 1 && isCalculatingZoom && !readingProgress?.zoom_level) {
       setTimeout(() => {
-        const pageElement = document.getElementById(`page-${targetPage}`)
-        if (pageElement) {
-          pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        try {
+          const pageElement = document.getElementById(`page-${pageNum}`)
+          if (pageElement) {
+            const canvas = pageElement.querySelector('canvas')
+            if (canvas) {
+              const renderedHeight = canvas.offsetHeight
+              const pageHeightAtScale1 = renderedHeight / scale
+              pageHeightRef.current = pageHeightAtScale1
+              
+              const headerHeight = 80
+              const padding = 32
+              const availableHeight = window.innerHeight - headerHeight - padding
+              
+              const fitToHeightScale = availableHeight / pageHeightAtScale1
+              setScale(fitToHeightScale)
+              setIsCalculatingZoom(false)
+            }
+          }
+        } catch (error) {
+          console.error('Error calculating fit-to-height zoom:', error)
+          setIsCalculatingZoom(false)
         }
-      }, 500)
-    } else {
-      // Load first few pages initially
-      setLoadedPages(Math.min(3, totalPages))
+      }, 100)
     }
   }
 
   const onDocumentLoadError = (error) => {
     console.error('PDF load error:', error)
-    console.error('PDF URL:', pdfUrl)
-    console.error('Error details:', {
-      message: error.message,
-      name: error.name,
-      stack: error.stack
-    })
     toast.error(`Failed to load PDF document: ${error.message || 'Unknown error'}`)
   }
 
-  const loadMorePages = () => {
-    if (loadedPages < numPages) {
-      setLoadedPages(prev => Math.min(prev + 2, numPages))
-    }
-  }
-
-  // Sync progress on scroll (debounced)
+  // Save progress when page changes
   useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)
-      const currentPage = Math.floor(scrollPosition * numPages) + 1
+    // Only save if page actually changed and we have valid data
+    if (currentPage && numPages && currentPage !== lastSavedPageRef.current) {
+      lastSavedPageRef.current = currentPage
+      setProgress(bookId, currentPage)
       
-      if (numPages && currentPage > 0 && currentPage <= numPages) {
-        setProgress(bookId, currentPage, scrollPosition)
-        
-        // Debounce sync to database
-        clearTimeout(window.progressSyncTimeout)
-        window.progressSyncTimeout = setTimeout(() => {
-          syncProgressMutation.mutate({ page: currentPage, scrollPosition })
-        }, 2000)
-      }
+      // Debounce sync to database
+      clearTimeout(window.progressSyncTimeout)
+      window.progressSyncTimeout = setTimeout(() => {
+        syncProgressMutation.mutate({ page: currentPage, zoomLevel: scale })
+      }, 1000)
     }
-
-    window.addEventListener('scroll', handleScroll)
+    
     return () => {
-      window.removeEventListener('scroll', handleScroll)
       clearTimeout(window.progressSyncTimeout)
     }
-  }, [numPages, bookId, syncProgressMutation, setProgress])
+  }, [currentPage, numPages, bookId, scale, syncProgressMutation])
 
-  if (bookLoading || pdfUrlLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading book...</div>
-      </div>
-    )
+  // Show loading screen only while fetching initial data
+  // Once we have pdfUrl, let Document component handle its own loading
+  const showLoadingScreen = 
+    bookLoading || 
+    pdfUrlLoading || 
+    !pdfUrl
+
+  if (showLoadingScreen) {
+    return <BookLoadingScreen messageIndex={0} />
   }
 
   if (bookError) {
@@ -257,10 +300,8 @@ function Reader() {
     )
   }
 
-  const pages = Array.from({ length: loadedPages }, (_, i) => i + 1)
-
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-10 p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -273,14 +314,28 @@ function Reader() {
           <h1 className="text-lg font-semibold truncate flex-1 mx-4">{book.title}</h1>
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
+              onClick={() => {
+                const newScale = Math.max(0.5, scale - 0.25)
+                setScale(newScale)
+                clearTimeout(window.zoomSaveTimeout)
+                window.zoomSaveTimeout = setTimeout(() => {
+                  saveZoomMutation.mutate(newScale)
+                }, 500)
+              }}
               className="px-3 py-1 bg-gray-200 rounded-sm hover:bg-gray-300 cursor-pointer"
             >
               −
             </button>
             <span className="text-sm">{(scale * 100).toFixed(0)}%</span>
             <button
-              onClick={() => setScale(prev => Math.min(3, prev + 0.25))}
+              onClick={() => {
+                const newScale = Math.min(3, scale + 0.25)
+                setScale(newScale)
+                clearTimeout(window.zoomSaveTimeout)
+                window.zoomSaveTimeout = setTimeout(() => {
+                  saveZoomMutation.mutate(newScale)
+                }, 500)
+              }}
               className="px-3 py-1 bg-gray-200 rounded-sm hover:bg-gray-300 cursor-pointer"
             >
               +
@@ -289,58 +344,61 @@ function Reader() {
         </div>
       </div>
 
-      {/* PDF Viewer */}
-      <div className="max-w-4xl mx-auto p-4">
-        <InfiniteScroll
-          dataLength={pages.length}
-          next={loadMorePages}
-          hasMore={loadedPages < numPages}
-          loader={
-            <div className="text-center py-4">
-              <div className="text-gray-500">Loading pages...</div>
-            </div>
-          }
-          endMessage={
-            <div className="text-center py-4 text-gray-500">
-              <p>You've reached the end!</p>
-            </div>
-          }
-        >
-          <Document
-            file={pdfUrl}
-            onLoadSuccess={onDocumentLoadSuccess}
-            onLoadError={onDocumentLoadError}
-            loading={
-              <div className="text-center py-12">
-                <div className="text-lg">Loading PDF...</div>
-              </div>
-            }
-            error={
-              <div className="text-center py-12 text-red-600">
-                <div className="text-lg mb-2">Failed to load PDF</div>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-sm hover:bg-blue-700 cursor-pointer"
-                >
-                  Retry
-                </button>
-              </div>
-            }
-            className="flex flex-col items-center"
-          >
-            {pages.map((pageNum) => (
-              <div key={pageNum} id={`page-${pageNum}`} className="mb-4">
-                <Page
-                  pageNumber={pageNum}
-                  scale={scale}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                  className="shadow-lg"
-                />
-              </div>
-            ))}
-          </Document>
-        </InfiniteScroll>
+      {/* PDF Viewer - Centered Single Page */}
+      <div className="flex-1 flex items-center justify-center p-4 overflow-auto">
+        <div className="max-w-full">
+          {pdfUrl && (
+            <Document
+              file={pdfUrl}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              loading={
+                <div className="text-center py-12">
+                  <div className="text-lg">Loading PDF...</div>
+                </div>
+              }
+              error={
+                <div className="text-center py-12 text-red-600">
+                  <div className="text-lg mb-2">Failed to load PDF</div>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-sm hover:bg-blue-700 cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                </div>
+              }
+              className="flex justify-center"
+            >
+              {numPages && currentPage && (
+                <div id={`page-${currentPage}`} className="shadow-lg">
+                  <Page
+                    pageNumber={currentPage}
+                    scale={scale}
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                    onLoadSuccess={() => onPageLoadSuccess(currentPage)}
+                    loading={
+                      <div className="text-center py-8">
+                        <div className="text-sm text-gray-500">Loading page {currentPage}...</div>
+                      </div>
+                    }
+                    className="max-w-full h-auto"
+                  />
+                </div>
+              )}
+            </Document>
+          )}
+        </div>
+      </div>
+
+      {/* Footer with Page Info */}
+      <div className="bg-white border-t sticky bottom-0 z-10 p-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <div className="text-sm text-gray-600">
+            Page {currentPage} of {numPages || '...'}
+          </div>
+        </div>
       </div>
     </div>
   )
