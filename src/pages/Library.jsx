@@ -21,14 +21,47 @@ function Library() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return []
 
-      const { data, error } = await supabase
+      // Fetch books
+      const { data: booksData, error: booksError } = await supabase
         .from('books')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
-      if (error) throw error
-      return data || []
+      if (booksError) throw booksError
+      if (!booksData || booksData.length === 0) return []
+
+      // Fetch reading progress for all books
+      const bookIds = booksData.map(b => b.id)
+      const { data: progressData, error: progressError } = await supabase
+        .from('reading_progress')
+        .select('book_id, current_page, last_read_at, zoom_level')
+        .eq('user_id', user.id)
+        .in('book_id', bookIds)
+
+      if (progressError) throw progressError
+      
+      // Create a map of book_id -> progress
+      const progressMap = {}
+      if (progressData) {
+        progressData.forEach(progress => {
+          progressMap[progress.book_id] = {
+            current_page: progress.current_page,
+            last_read_at: progress.last_read_at,
+            zoom_level: progress.zoom_level
+          }
+        })
+      }
+      
+      // Merge books with their progress
+      const booksWithProgress = booksData.map(book => ({
+        ...book,
+        current_page: progressMap[book.id]?.current_page || null,
+        last_read_at: progressMap[book.id]?.last_read_at || null,
+        zoom_level: progressMap[book.id]?.zoom_level || null
+      }))
+      
+      return booksWithProgress
     },
     retry: 2,
   })
@@ -297,25 +330,22 @@ function Library() {
               </div>
             ))
           ) : (
-            // Sort books by last_read_at (most recent first), then by created_at for unread books
+            // Sort books by most recent date (either created_at or last_read_at, whichever is more recent)
             (() => {
               const sortedBooks = [...(books || [])]
-              if (readingProgressMap) {
-                sortedBooks.sort((a, b) => {
-                  const aLastRead = readingProgressMap[a.id]
-                  const bLastRead = readingProgressMap[b.id]
-                  
-                  // If both have last_read_at, sort by that (most recent first)
-                  if (aLastRead && bLastRead) {
-                    return new Date(bLastRead) - new Date(aLastRead)
-                  }
-                  // If only one has last_read_at, prioritize it
-                  if (aLastRead && !bLastRead) return -1
-                  if (!aLastRead && bLastRead) return 1
-                  // If neither has last_read_at, sort by created_at (most recent first)
-                  return new Date(b.created_at) - new Date(a.created_at)
-                })
-              }
+              sortedBooks.sort((a, b) => {
+                // Get the most recent date for each book
+                const aMostRecent = a.last_read_at 
+                  ? Math.max(new Date(a.created_at), new Date(a.last_read_at))
+                  : new Date(a.created_at)
+                
+                const bMostRecent = b.last_read_at
+                  ? Math.max(new Date(b.created_at), new Date(b.last_read_at))
+                  : new Date(b.created_at)
+                
+                // Sort by most recent date in descending order (newest first)
+                return bMostRecent - aMostRecent
+              })
               return sortedBooks
             })().map((book) => {
                 const pdfUrl = pdfUrlMap?.[book.id] || null
