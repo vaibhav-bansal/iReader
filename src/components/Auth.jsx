@@ -40,10 +40,14 @@ function Auth({ children }) {
 
   const signInWithGoogle = async () => {
     try {
+      // Use current origin (automatically works for localhost and production)
+      const redirectTo = window.location.origin
+      console.log('OAuth redirect URL:', redirectTo)
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}`,
+          redirectTo: redirectTo,
         },
       })
       if (error) throw error
