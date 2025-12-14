@@ -61,15 +61,8 @@
 
 ## Features to Simplify/Enable
 
-### 11. Loading Screen Simplification
-    - Remove complex page detection
-    - Simple: "Loading page X..."
-    - Show only while PDF/document loads
-
 ### 12. Zoom Updates
-    - Zoom applies to single page
     - Fit-to-height/width options
-    - Zoom persists per book
 
 ### 13. Progress Indicator
     - Progress bar showing "X% read"
@@ -115,7 +108,7 @@
 
 ### 20. Update Database Sync
     - Simplify progress sync (just page number)
-    - Remove scroll position if not needed
+    - Remove scroll position
     - Faster, more reliable sync
 
 ## Files to Modify
@@ -137,7 +130,7 @@
 
 1. **Phase 1**: Core Conversion (items 1-5, 10, 18, 19)
 2. **Phase 2**: Navigation (items 6-9)
-3. **Phase 3**: Enhanced Features (items 11-13)
+3. **Phase 3**: Enhanced Features (items 12-13, 20)
 4. **Phase 4**: Future Features (items 14-17)
 
 ## UI Layout Preview

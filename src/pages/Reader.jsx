@@ -133,6 +133,7 @@ function Reader() {
         .single()
 
       if (error && error.code !== 'PGRST116') throw error // PGRST116 = not found
+      console.log('Reading progress fetched:', data)
       return data
     },
     enabled: !!bookId,
@@ -153,6 +154,7 @@ function Reader() {
     if (readingProgress?.current_page && !hasRestoredRef.current && !numPages) {
       // Document hasn't loaded yet, but we have progress - set it as initial page
       // Will be validated when document loads
+      console.log('Setting initial page from readingProgress (before document load):', readingProgress.current_page)
       setCurrentPage(readingProgress.current_page)
     }
   }, [readingProgress?.current_page, numPages])
@@ -160,22 +162,34 @@ function Reader() {
   // Sync progress mutation
   const syncProgressMutation = useMutation({
     mutationFn: async ({ page, zoomLevel }) => {
+      console.log('🔄 syncProgressMutation.mutationFn called with:', { page, zoomLevel, bookId })
+      
       // Check authentication and session
       const { data: { user }, error: authError } = await supabase.auth.getUser()
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      console.log('🔐 Auth check:', { 
+        user: user?.id, 
+        authError, 
+        hasSession: !!session,
+        sessionError 
+      })
       
       if (authError) {
-        console.error('Auth error:', authError)
+        console.error('❌ Auth error:', authError)
         throw new Error('Authentication error: ' + authError.message)
       }
       if (!user) {
-        console.error('No user found')
+        console.error('❌ No user found')
         throw new Error('Not authenticated')
       }
       if (!session) {
-        console.error('No active session')
+        console.error('❌ No active session')
         throw new Error('No active session - user may need to re-authenticate')
       }
+
+      console.log('✅ User authenticated:', user.id)
+      console.log('✅ Session active:', session.access_token ? 'Yes' : 'No')
 
       const progressData = {
         user_id: user.id,
@@ -184,6 +198,20 @@ function Reader() {
         last_read_at: new Date().toISOString(),
         ...(zoomLevel !== undefined && { zoom_level: zoomLevel }),
       }
+
+      console.log('📤 Upserting progress data to Supabase:', progressData)
+      console.log('📤 Supabase client:', supabase)
+      console.log('📤 Table: reading_progress')
+
+      // First, try to check if a record exists
+      const { data: existingData, error: checkError } = await supabase
+        .from('reading_progress')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('book_id', bookId)
+        .single()
+
+      console.log('🔍 Existing record check:', { existingData, checkError })
 
       // Use upsert with conflict resolution
       // Supabase uses the unique constraint (user_id, book_id) for conflict resolution
@@ -194,10 +222,17 @@ function Reader() {
         })
         .select()
 
+      console.log('📥 Upsert response:', { data, error })
+
       if (error) {
-        console.error('Database upsert error:', error)
+        console.error('❌ Database upsert error:', error)
+        console.error('Error code:', error.code)
+        console.error('Error message:', error.message)
+        console.error('Error details:', JSON.stringify(error, null, 2))
+        console.error('Error hint:', error.hint)
         
         // If upsert fails, try update as fallback
+        console.log('🔄 Trying update as fallback')
         const { data: updateData, error: updateError } = await supabase
           .from('reading_progress')
           .update({
@@ -209,13 +244,20 @@ function Reader() {
           .eq('book_id', bookId)
           .select()
 
+        console.log('📥 Update response:', { updateData, updateError })
+
         if (updateError) {
-          console.error('Update error:', updateError)
+          console.error('❌ Update error:', updateError)
+          console.error('Update error code:', updateError.code)
+          console.error('Update error message:', updateError.message)
+          console.error('Update error details:', JSON.stringify(updateError, null, 2))
           throw updateError
         }
+        console.log('✅ Progress updated successfully (fallback):', updateData)
         return updateData
       }
 
+      console.log('✅ Progress upserted successfully:', data)
       return data
     },
     onSuccess: () => {
@@ -293,6 +335,7 @@ function Reader() {
     // Restore reading position if available (only once)
     if (readingProgress?.current_page && !hasRestoredRef.current) {
       const targetPage = Math.min(Math.max(1, readingProgress.current_page), totalPages)
+      console.log('Restoring to page from onDocumentLoadSuccess:', targetPage)
       setCurrentPage(targetPage)
       // Don't set lastSavedPageRef here - let the save useEffect handle it after restoration
       hasRestoredRef.current = true
@@ -309,11 +352,13 @@ function Reader() {
   useEffect(() => {
     if (numPages && readingProgress?.current_page && !hasRestoredRef.current) {
       const targetPage = Math.min(Math.max(1, readingProgress.current_page), numPages)
+      console.log('Restoring to page from useEffect:', targetPage, { numPages, savedPage: readingProgress.current_page })
       setCurrentPage(targetPage)
       // Don't set lastSavedPageRef here - let the save useEffect handle it after restoration
       hasRestoredRef.current = true
     } else if (numPages && !readingProgress?.current_page && !hasRestoredRef.current) {
       // No saved progress, ensure we're on page 1
+      console.log('No saved progress, starting at page 1')
       setCurrentPage(1)
       lastSavedPageRef.current = 1 // Set to 1 so we don't try to save on initial load
       hasRestoredRef.current = true
@@ -474,6 +519,14 @@ function Reader() {
 
   // Save progress when page changes
   useEffect(() => {
+    console.log('Save progress useEffect triggered:', {
+      currentPage,
+      numPages,
+      lastSaved: lastSavedPageRef.current,
+      hasRestored: hasRestoredRef.current,
+      bookId
+    })
+
     // Only save if page actually changed and we have valid data
     // Skip if we're still restoring (hasRestoredRef is false means restoration hasn't completed)
     // Also skip if we already have a pending save for this page
@@ -484,6 +537,14 @@ function Reader() {
                       hasRestoredRef.current
     
     if (shouldSave) {
+      console.log('✅ Page changed, preparing to save:', { 
+        currentPage, 
+        lastSaved: lastSavedPageRef.current, 
+        pending: pendingSaveRef.current,
+        numPages,
+        bookId 
+      })
+      
       // Mark this page as pending save
       pendingSaveRef.current = currentPage
       
@@ -497,26 +558,44 @@ function Reader() {
       }
       
       // Debounce sync to database - only update lastSavedPageRef AFTER save completes
+      // Reduced timeout to 500ms for faster testing
       progressSyncTimeoutRef.current = setTimeout(() => {
+        console.log('💾 TIMEOUT FIRED - Saving progress to database:', { page: currentPage, zoomLevel: scale, bookId })
+        
         syncProgressMutation.mutate(
           { page: currentPage, zoomLevel: scale },
           {
             onSuccess: (data) => {
+              console.log('✅ Progress saved successfully to database:', data)
               // Mark as saved after successful save
               lastSavedPageRef.current = currentPage
               pendingSaveRef.current = null
               progressSyncTimeoutRef.current = null
             },
             onError: (error) => {
-              console.error('Failed to save progress:', error)
-              toast.error('Failed to save reading progress')
+              console.error('❌ Failed to save progress:', error)
+              console.error('Error details:', JSON.stringify(error, null, 2))
+              console.error('Error stack:', error.stack)
+              toast.error('Failed to save reading progress: ' + (error.message || 'Unknown error'))
               // Clear pending save on error, so it will retry on next change
               pendingSaveRef.current = null
               progressSyncTimeoutRef.current = null
             }
           }
         )
-      }, 1000)
+      }, 500) // Reduced from 1000ms to 500ms for faster testing
+    } else {
+      const reason = !currentPage ? 'no currentPage' : 
+                    !numPages ? 'no numPages' : 
+                    currentPage === lastSavedPageRef.current ? 'page unchanged' :
+                    !hasRestoredRef.current ? 'restoration not complete' : 'unknown'
+      console.log('⏭️ Skipping save:', { 
+        currentPage, 
+        numPages, 
+        lastSaved: lastSavedPageRef.current,
+        hasRestored: hasRestoredRef.current,
+        reason
+      })
     }
     
     return () => {

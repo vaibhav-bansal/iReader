@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import BookCover from '../components/BookCover'
 import BookCoverSkeleton from '../components/BookCoverSkeleton'
+import '../lib/pdfWorker' // Ensure PDF.js worker is configured
+import { generateThumbnail } from '../lib/thumbnailGenerator'
 
 function Library() {
   const navigate = useNavigate()
@@ -66,55 +68,29 @@ function Library() {
     retry: 2,
   })
 
-  // Fetch reading progress for all books
-  const { data: readingProgressMap, isLoading: readingProgressLoading } = useQuery({
-    queryKey: ['readingProgressMap'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user || !books?.length) return {}
-
-      const bookIds = books.map(b => b.id)
-      const { data, error } = await supabase
-        .from('reading_progress')
-        .select('book_id, last_read_at')
-        .eq('user_id', user.id)
-        .in('book_id', bookIds)
-
-      if (error) throw error
-      
-      // Create a map: book_id -> last_read_at
-      const map = {}
-      data?.forEach(progress => {
-        map[progress.book_id] = progress.last_read_at
-      })
-      return map
-    },
-    enabled: !!books?.length,
-    retry: 2,
-  })
-
-  // Generate signed URLs for all book covers
-  const { data: pdfUrlMap, isLoading: pdfUrlsLoading } = useQuery({
-    queryKey: ['pdfUrls', books],
+  // Generate signed URLs for book thumbnails (only if thumbnail_path exists)
+  const { data: coverUrlMap, isLoading: coverUrlsLoading } = useQuery({
+    queryKey: ['coverUrls', books],
     queryFn: async () => {
       if (!books?.length) return {}
       
       const urlMap = {}
       await Promise.all(
         books.map(async (book) => {
-          if (!book.file_path) return
+          // Only fetch thumbnail if it exists
+          if (!book.thumbnail_path) return
           
           try {
             // Try to create signed URL (for private buckets)
             const { data, error } = await supabase.storage
               .from('books')
-              .createSignedUrl(book.file_path, 3600) // 1 hour expiry
+              .createSignedUrl(book.thumbnail_path, 3600) // 1 hour expiry
             
             if (error) {
               // Fallback to public URL if signed URL fails
               const publicUrl = supabase.storage
                 .from('books')
-                .getPublicUrl(book.file_path).data.publicUrl
+                .getPublicUrl(book.thumbnail_path).data.publicUrl
               urlMap[book.id] = publicUrl
             } else {
               urlMap[book.id] = data.signedUrl
@@ -123,7 +99,7 @@ function Library() {
             // Fallback to public URL on error
             const publicUrl = supabase.storage
               .from('books')
-              .getPublicUrl(book.file_path).data.publicUrl
+              .getPublicUrl(book.thumbnail_path).data.publicUrl
             urlMap[book.id] = publicUrl
           }
         })
@@ -140,20 +116,25 @@ function Library() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      // Get book to find file path
+      // Get book to find file paths
       const { data: book } = await supabase
         .from('books')
-        .select('file_path')
+        .select('file_path, thumbnail_path')
         .eq('id', bookId)
         .eq('user_id', user.id)
         .single()
 
       if (!book) throw new Error('Book not found')
 
-      // Delete file from storage
+      // Delete files from storage (PDF and thumbnail if exists)
+      const filesToDelete = [book.file_path]
+      if (book.thumbnail_path) {
+        filesToDelete.push(book.thumbnail_path)
+      }
+
       const { error: storageError } = await supabase.storage
         .from('books')
-        .remove([book.file_path])
+        .remove(filesToDelete)
 
       if (storageError) throw storageError
 
@@ -168,8 +149,7 @@ function Library() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['books'] })
-      queryClient.invalidateQueries({ queryKey: ['readingProgressMap'] })
-      queryClient.invalidateQueries({ queryKey: ['pdfUrls'] })
+      queryClient.invalidateQueries({ queryKey: ['coverUrls'] })
       toast.success('Book deleted successfully')
       setDeleteConfirmation(null)
     },
@@ -229,13 +209,37 @@ function Library() {
 
       // Upload file to Supabase Storage
       const fileExt = pdfFile.name.split('.').pop()
-      const fileName = `${user.id}/${Date.now()}.${fileExt}`
+      const timestamp = Date.now()
+      const fileName = `${user.id}/${timestamp}.${fileExt}`
       
       const { error: uploadError } = await supabase.storage
         .from('books')
         .upload(fileName, pdfFile)
 
       if (uploadError) throw uploadError
+
+      // Generate and upload thumbnail
+      let thumbnailPath = null
+      try {
+        const thumbnailBlob = await generateThumbnail(pdfFile)
+        const thumbnailFileName = `${user.id}/${timestamp}_thumb.jpg`
+        
+        const { error: thumbnailUploadError } = await supabase.storage
+          .from('books')
+          .upload(thumbnailFileName, thumbnailBlob, {
+            contentType: 'image/jpeg',
+          })
+
+        if (thumbnailUploadError) {
+          console.warn('Thumbnail generation failed:', thumbnailUploadError)
+          // Continue without thumbnail - not critical
+        } else {
+          thumbnailPath = thumbnailFileName
+        }
+      } catch (thumbnailError) {
+        console.warn('Thumbnail generation error:', thumbnailError)
+        // Continue without thumbnail - not critical
+      }
 
       // Create book record (total_pages will be set when PDF is first opened)
       const { data: bookData, error: dbError } = await supabase
@@ -246,6 +250,7 @@ function Library() {
           file_name: pdfFile.name,
           file_path: fileName,
           file_size: pdfFile.size,
+          thumbnail_path: thumbnailPath,
           total_pages: null, // Will be updated when PDF is first loaded
         })
         .select()
@@ -273,7 +278,7 @@ function Library() {
   })
 
   // Show skeleton loaders while loading
-  const showSkeletons = isLoading || pdfUrlsLoading || readingProgressLoading
+  const showSkeletons = isLoading || coverUrlsLoading
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
@@ -348,10 +353,10 @@ function Library() {
               })
               return sortedBooks
             })().map((book) => {
-                const pdfUrl = pdfUrlMap?.[book.id] || null
-                const lastReadAt = readingProgressMap?.[book.id]
-                // Show skeleton for cover if PDF URL is not yet loaded
-                const isCoverLoading = !pdfUrl
+                const coverUrl = coverUrlMap?.[book.id] || null
+                const lastReadAt = book.last_read_at
+                // Show skeleton for cover if URL is not yet loaded (only if thumbnail exists)
+                const isCoverLoading = book.thumbnail_path && !coverUrl
               
               return (
                 <div
@@ -387,7 +392,7 @@ function Library() {
                       <BookCoverSkeleton className="w-full h-full" />
                     ) : (
                       <BookCover 
-                        pdfUrl={pdfUrl} 
+                        coverUrl={coverUrl}
                         title={book.title}
                         className="w-full h-full"
                       />
