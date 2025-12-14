@@ -27,8 +27,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.87.1",
     "@tanstack/react-query": "^5.90.12",
+    "canvas": "^3.2.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dotenv": "^17.2.3",
+    "pdfjs-dist": "^5.4.449",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-dropzone": "^14.3.8",
