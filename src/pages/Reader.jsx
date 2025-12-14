@@ -1,495 +1,304 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getBook, getProgress, saveProgress, getPreferences, savePreferences } from '../utils/storage'
-import ReaderControls from '../components/ReaderControls'
-import { useAnalytics, ANALYTICS_EVENTS, ANALYTICS_PROPERTIES } from '../utils/analytics'
-import { Worker } from '@react-pdf-viewer/core'
-import PDFViewer from '../components/PDFViewer'
-import './Reader.css'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Document, Page, pdfjs } from 'react-pdf'
+import InfiniteScroll from 'react-infinite-scroll-component'
+import { supabase } from '../lib/supabase'
+import toast from 'react-hot-toast'
+import 'react-pdf/dist/Page/AnnotationLayer.css'
+import 'react-pdf/dist/Page/TextLayer.css'
+import { useProgressStore } from '../store/progressStore'
 
-// PDF.js worker URL - use local worker
-const PDF_WORKER_URL = new URL(
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url
+  import.meta.url,
 ).toString()
 
 function Reader() {
   const { bookId } = useParams()
   const navigate = useNavigate()
-  const { track } = useAnalytics()
-  
-  // Core state
-  const [book, setBook] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  
-  // EPUB state
-  const [epubRendition, setEpubRendition] = useState(null)
-  const [epubBook, setEpubBook] = useState(null)
-  const [epubReady, setEpubReady] = useState(false)
-  
-  // PDF state
-  const [pdfInitialPage, setPdfInitialPage] = useState(0)
-  
-  // UI state
-  const [progress, setProgress] = useState(0)
-  const [showControls, setShowControls] = useState(true)
-  const [showSettings, setShowSettings] = useState(false)
-  const [preferences, setPreferences] = useState(() => getPreferences())
-  
-  // Refs
-  const epubContainerRef = useRef(null)
-  const progressTimeoutRef = useRef(null)
-  const savedPositionRef = useRef(null)
+  const queryClient = useQueryClient()
+  const [numPages, setNumPages] = useState(null)
+  const [loadedPages, setLoadedPages] = useState(1)
+  const [scale, setScale] = useState(1.5)
 
-  // Apply theme on mount and preference changes
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', preferences.theme)
-  }, [preferences.theme])
+  const { progress, setProgress } = useProgressStore()
 
-  // Load book data
+  // Fetch book data
+  const { data: book, isLoading: bookLoading, error: bookError } = useQuery({
+    queryKey: ['book', bookId],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      const { data, error } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', bookId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    retry: 2,
+  })
+
   useEffect(() => {
-    loadBook()
-    return () => {
-      // Cleanup EPUB on unmount
-      if (epubBook) {
-        try {
-          epubBook.destroy()
-        } catch (e) {
-          console.warn('Error destroying epub:', e)
-        }
-      }
-      if (progressTimeoutRef.current) {
-        clearTimeout(progressTimeoutRef.current)
-      }
+    if (bookError) {
+      toast.error(bookError.message || 'Failed to load book')
     }
-  }, [bookId])
+  }, [bookError])
 
-  // Render EPUB when book and container are ready
-  useEffect(() => {
-    if (book?.format === 'epub' && epubContainerRef.current && !epubRendition && !epubReady) {
-      // Wait for container to have dimensions
-      const checkContainer = () => {
-        const container = epubContainerRef.current
-        if (container) {
-          const rect = container.getBoundingClientRect()
-          if (rect.width > 0 && rect.height > 0) {
-            renderEpub()
-          } else {
-            // Retry after a short delay if container doesn't have dimensions yet
-            setTimeout(checkContainer, 100)
-          }
-        }
-      }
-      checkContainer()
-    }
-  }, [book, epubRendition, epubReady])
-
-  // Apply preferences to EPUB rendition
-  useEffect(() => {
-    if (epubRendition && epubReady) {
-      applyEpubPreferences()
-    }
-  }, [epubRendition, epubReady, preferences])
-
-  const loadBook = async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      setEpubRendition(null)
-      setEpubBook(null)
-      setEpubReady(false)
+  // Get PDF URL from Supabase Storage
+  const { data: pdfUrl, error: pdfUrlError } = useQuery({
+    queryKey: ['pdfUrl', book?.file_path],
+    queryFn: async () => {
+      if (!book?.file_path) return null
       
-      const bookData = await getBook(bookId)
-      if (!bookData) {
-        throw new Error('Book not found')
-      }
-
-      // Ensure fileData is ArrayBuffer
-      let fileData = bookData.fileData
-      if (!fileData) {
-        throw new Error('Book file data is missing. Please re-upload the book.')
-      }
+      // For private buckets, create a signed URL
+      const { data, error } = await supabase.storage
+        .from('books')
+        .createSignedUrl(book.file_path, 3600) // 1 hour expiry
       
-      if (!(fileData instanceof ArrayBuffer)) {
-        if (fileData instanceof Uint8Array) {
-          fileData = fileData.buffer.slice(fileData.byteOffset, fileData.byteOffset + fileData.byteLength)
-        } else if (fileData instanceof Blob) {
-          fileData = await fileData.arrayBuffer()
-        } else {
-          throw new Error('Invalid file data format')
-        }
-        bookData.fileData = fileData
+      if (error) throw error
+      return data.signedUrl
+    },
+    enabled: !!book?.file_path,
+    retry: 2,
+  })
+
+  useEffect(() => {
+    if (pdfUrlError) {
+      toast.error('Failed to load PDF file')
+    }
+  }, [pdfUrlError])
+
+  // Fetch reading progress
+  const { data: readingProgress } = useQuery({
+    queryKey: ['readingProgress', bookId],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return null
+
+      const { data, error } = await supabase
+        .from('reading_progress')
+        .select('*')
+        .eq('book_id', bookId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (error && error.code !== 'PGRST116') throw error // PGRST116 = not found
+      return data
+    },
+    enabled: !!bookId,
+  })
+
+  // Sync progress mutation
+  const syncProgressMutation = useMutation({
+    mutationFn: async ({ page, scrollPosition }) => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Not authenticated')
+
+      const progressData = {
+        user_id: user.id,
+        book_id: bookId,
+        current_page: page,
+        scroll_position: scrollPosition,
+        last_read_at: new Date().toISOString(),
       }
 
-      // Load saved progress
-      const savedProgress = await getProgress(bookId)
-      if (savedProgress) {
-        setProgress(savedProgress.percentage || 0)
-        savedPositionRef.current = savedProgress.position
+      const { error } = await supabase
+        .from('reading_progress')
+        .upsert(progressData, {
+          onConflict: 'user_id,book_id',
+        })
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['readingProgress', bookId] })
+    },
+    onError: (error) => {
+      console.error('Progress sync error:', error)
+      // Don't show toast for progress sync errors - they're not critical
+    },
+    retry: 1,
+  })
+
+  // Update total pages in book record when PDF loads
+  const updateTotalPagesMutation = useMutation({
+    mutationFn: async (totalPages) => {
+      if (!book?.total_pages) {
+        const { error } = await supabase
+          .from('books')
+          .update({ total_pages: totalPages })
+          .eq('id', bookId)
+
+        if (error) throw error
+        queryClient.invalidateQueries({ queryKey: ['book', bookId] })
+      }
+    },
+  })
+
+  const onDocumentLoadSuccess = ({ numPages: totalPages }) => {
+    setNumPages(totalPages)
+    updateTotalPagesMutation.mutate(totalPages)
+    
+    // Restore reading position
+    if (readingProgress?.current_page) {
+      const targetPage = Math.min(readingProgress.current_page, totalPages)
+      setLoadedPages(Math.max(targetPage + 2, 3))
+      // Scroll to saved position after a short delay
+      setTimeout(() => {
+        const pageElement = document.getElementById(`page-${targetPage}`)
+        if (pageElement) {
+          pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 500)
+    } else {
+      // Load first few pages initially
+      setLoadedPages(Math.min(3, totalPages))
+    }
+  }
+
+  const onDocumentLoadError = (error) => {
+    console.error('PDF load error:', error)
+    toast.error('Failed to load PDF document')
+  }
+
+  const loadMorePages = () => {
+    if (loadedPages < numPages) {
+      setLoadedPages(prev => Math.min(prev + 2, numPages))
+    }
+  }
+
+  // Sync progress on scroll (debounced)
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)
+      const currentPage = Math.floor(scrollPosition * numPages) + 1
+      
+      if (numPages && currentPage > 0 && currentPage <= numPages) {
+        setProgress(bookId, currentPage, scrollPosition)
         
-        // For PDF, set initial page
-        if (bookData.format === 'pdf' && savedProgress.position) {
-          const page = parseInt(savedProgress.position) || 0
-          setPdfInitialPage(page)
-        }
-      }
-
-      setBook(bookData)
-      
-      // Track reading started
-      track(ANALYTICS_EVENTS.READING_STARTED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.BOOK_TITLE]: bookData.title,
-        [ANALYTICS_PROPERTIES.BOOK_FORMAT]: bookData.format,
-        resumed: !!savedProgress,
-      })
-
-    } catch (err) {
-      console.error('Error loading book:', err)
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const renderEpub = async () => {
-    if (!book?.fileData || !epubContainerRef.current) {
-      console.log('Cannot render EPUB: missing book data or container')
-      return
-    }
-
-    try {
-      console.log('Starting EPUB render...')
-      setLoading(true)
-      
-      // Clear container
-      const container = epubContainerRef.current
-      container.innerHTML = ''
-      
-      const EPUB = (await import('epubjs')).default
-      
-      // Clone the ArrayBuffer to avoid detachment issues
-      const clonedData = book.fileData.slice(0)
-      
-      // Create book instance
-      const epubInstance = EPUB(clonedData)
-      
-      console.log('Waiting for EPUB to be ready...')
-      await epubInstance.ready
-      console.log('EPUB ready, creating rendition...')
-      
-      // Get container dimensions - ensure we have valid dimensions
-      const rect = container.getBoundingClientRect()
-      const width = rect.width > 0 ? rect.width : window.innerWidth
-      const height = rect.height > 0 ? rect.height : window.innerHeight - 200
-      
-      console.log('Container dimensions:', width, height)
-      
-      // Create rendition with explicit dimensions
-      const rendition = epubInstance.renderTo(container, {
-        width: width,
-        height: height,
-        spread: 'none',
-        flow: 'paginated',
-      })
-
-      // Set up event handlers before display
-      rendition.on('relocated', (location) => {
-        handleEpubRelocated(location, epubInstance)
-      })
-
-      // Display at saved position or start
-      const initialLocation = savedPositionRef.current || undefined
-      console.log('Displaying at location:', initialLocation || 'start')
-      
-      await rendition.display(initialLocation)
-      console.log('EPUB displayed successfully')
-
-      // Generate locations for progress (do this after display)
-      try {
-        if (epubInstance.locations && epubInstance.locations.length() === 0) {
-          console.log('Generating locations...')
-          await epubInstance.locations.generate(1024)
-          console.log('Locations generated')
-        }
-      } catch (locErr) {
-        console.warn('Could not generate locations:', locErr)
-      }
-
-      // Handle window resize
-      const handleResize = () => {
-        if (rendition && container) {
-          const newRect = container.getBoundingClientRect()
-          if (newRect.width > 0 && newRect.height > 0) {
-            rendition.resize(newRect.width, newRect.height)
-          }
-        }
-      }
-      window.addEventListener('resize', handleResize)
-      rendition._resizeHandler = handleResize
-
-      setEpubBook(epubInstance)
-      setEpubRendition(rendition)
-      setEpubReady(true)
-      setLoading(false)
-      
-    } catch (err) {
-      console.error('Error rendering EPUB:', err)
-      setError(`Failed to render EPUB: ${err.message}`)
-      setLoading(false)
-    }
-  }
-
-  const handleEpubRelocated = useCallback((location, epubInstance) => {
-    if (!location?.start) return
-
-    const cfi = location.start.cfi
-    let percentage = 0
-    
-    if (location.start.percentage !== undefined) {
-      percentage = location.start.percentage * 100
-    } else if (epubInstance?.locations) {
-      try {
-        percentage = (epubInstance.locations.percentageFromCfi(cfi) || 0) * 100
-      } catch (e) {
-        console.warn('Could not calculate percentage:', e)
+        // Debounce sync to database
+        clearTimeout(window.progressSyncTimeout)
+        window.progressSyncTimeout = setTimeout(() => {
+          syncProgressMutation.mutate({ page: currentPage, scrollPosition })
+        }, 2000)
       }
     }
 
-    setProgress(percentage)
-    
-    // Debounced save
-    if (progressTimeoutRef.current) {
-      clearTimeout(progressTimeoutRef.current)
+    window.addEventListener('scroll', handleScroll)
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      clearTimeout(window.progressSyncTimeout)
     }
-    progressTimeoutRef.current = setTimeout(() => {
-      saveProgress(bookId, cfi, percentage)
-      track(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
-      })
-    }, 1000)
-  }, [bookId, track])
+  }, [numPages, bookId, syncProgressMutation, setProgress])
 
-  const applyEpubPreferences = () => {
-    if (!epubRendition) return
-
-    try {
-      const fontFamily = preferences.fontFamily === 'serif'
-        ? 'Georgia, "Times New Roman", serif'
-        : preferences.fontFamily === 'sans-serif'
-        ? '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-        : '"Courier New", Courier, monospace'
-
-      // Theme colors based on current theme
-      const themeColors = {
-        light: { bg: '#ffffff', text: '#1a1a1a' },
-        dark: { bg: '#121212', text: '#e0e0e0' },
-        sepia: { bg: '#f9f3e3', text: '#5c4b37' },
-      }
-      const colors = themeColors[preferences.theme] || themeColors.light
-
-      epubRendition.themes.default({
-        body: {
-          'font-family': fontFamily + ' !important',
-          'font-size': `${preferences.fontSize}px !important`,
-          'line-height': `${preferences.lineSpacing} !important`,
-          'background-color': `${colors.bg} !important`,
-          'color': `${colors.text} !important`,
-          'padding': '20px !important',
-          'margin': '0 !important',
-        },
-        'p, div, span, h1, h2, h3, h4, h5, h6': {
-          'font-family': fontFamily + ' !important',
-        }
-      })
-
-      // Force re-render
-      if (epubContainerRef.current) {
-        const rect = epubContainerRef.current.getBoundingClientRect()
-        if (rect.width > 0 && rect.height > 0) {
-          epubRendition.resize(rect.width, rect.height)
-        }
-      }
-    } catch (err) {
-      console.warn('Error applying preferences:', err)
-    }
-  }
-
-  // PDF handlers
-  const handlePdfPageChange = useCallback((page, total) => {
-    const percentage = total > 0 ? ((page + 1) / total) * 100 : 0
-    setProgress(percentage)
-    
-    // Debounced save
-    if (progressTimeoutRef.current) {
-      clearTimeout(progressTimeoutRef.current)
-    }
-    progressTimeoutRef.current = setTimeout(() => {
-      saveProgress(bookId, page.toString(), percentage)
-      track(ANALYTICS_EVENTS.READING_PROGRESS_UPDATED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: percentage,
-        page_number: page + 1,
-      })
-    }, 1000)
-  }, [bookId, track])
-
-  const handlePdfDocumentLoad = useCallback((numPages) => {
-    console.log('PDF loaded with', numPages, 'pages')
-  }, [])
-
-  // Navigation
-  const handleNext = () => {
-    if (epubRendition) {
-      epubRendition.next()
-      track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'next',
-      })
-    }
-  }
-
-  const handlePrevious = () => {
-    if (epubRendition) {
-      epubRendition.prev()
-      track(ANALYTICS_EVENTS.PAGE_NAVIGATED, {
-        [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-        [ANALYTICS_PROPERTIES.NAVIGATION_DIRECTION]: 'previous',
-      })
-    }
-  }
-
-  // Settings
-  const handlePreferencesChange = (newPrefs) => {
-    const updated = { ...preferences, ...newPrefs }
-    setPreferences(updated)
-    savePreferences(updated)
-  }
-
-  const toggleControls = (e) => {
-    // Don't toggle when clicking on interactive elements
-    if (e.target.closest('button, input, .reader-header, .reader-footer, .pdf-viewer-container')) {
-      return
-    }
-    setShowControls(!showControls)
-  }
-
-  const goToLibrary = () => {
-    track(ANALYTICS_EVENTS.NAVIGATION_BACK_TO_LIBRARY, {
-      [ANALYTICS_PROPERTIES.BOOK_ID]: bookId,
-      [ANALYTICS_PROPERTIES.PROGRESS_PERCENTAGE]: progress,
-    })
-    navigate('/')
-  }
-
-  // Render loading state
-  if (loading) {
+  if (bookLoading) {
     return (
-      <div className="reader-container">
-        <div className="reader-loading">
-          <div className="loading-spinner" />
-          <p>Loading book...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading book...</div>
       </div>
     )
   }
 
-  // Render error state
-  if (error) {
+  if (!book || !pdfUrl) {
     return (
-      <div className="reader-container">
-        <div className="reader-error">
-          <h2>Error</h2>
-          <p>{error}</p>
-          <button onClick={() => navigate('/')}>Back to Library</button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg text-red-600">Book not found</div>
       </div>
     )
   }
 
-  if (!book) return null
-
-  const isPdf = book.format === 'pdf'
-  const isEpub = book.format === 'epub'
+  const pages = Array.from({ length: loadedPages }, (_, i) => i + 1)
 
   return (
-    <div className="reader-container" onClick={toggleControls}>
+    <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      {showControls && (
-        <header className="reader-header" onClick={(e) => e.stopPropagation()}>
-          <button className="back-button" onClick={goToLibrary}>
-            ← Library
-          </button>
-          <div className="reader-title">
-            <h2>{book.title}</h2>
-            {book.author && <p>{book.author}</p>}
-          </div>
-          <div className="reader-progress-bar">
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="progress-text">{Math.round(progress)}%</span>
-          </div>
+      <div className="bg-white shadow-sm sticky top-0 z-10 p-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button
-            className="settings-button"
-            onClick={() => setShowSettings(!showSettings)}
-            aria-label="Settings"
+            onClick={() => navigate('/')}
+            className="text-blue-600 hover:text-blue-800 font-medium"
           >
-            ⚙️
+            ← Back to Library
           </button>
-        </header>
-      )}
-
-      {/* Settings Panel */}
-      {showSettings && (
-        <ReaderControls
-          preferences={preferences}
-          onPreferencesChange={handlePreferencesChange}
-          onClose={() => setShowSettings(false)}
-          bookFormat={book.format}
-        />
-      )}
-
-      {/* Main Content */}
-      <main className="reader-content">
-        {/* EPUB Reader */}
-        {isEpub && (
-          <div 
-            ref={epubContainerRef} 
-            className="epub-reader"
-            onClick={(e) => e.stopPropagation()}
-          />
-        )}
-
-        {/* PDF Reader */}
-        {isPdf && book.fileData && (
-          <div className="pdf-reader" onClick={(e) => e.stopPropagation()}>
-            <Worker workerUrl={PDF_WORKER_URL}>
-              <PDFViewer
-                fileData={book.fileData}
-                initialPage={pdfInitialPage}
-                onPageChange={handlePdfPageChange}
-                onDocumentLoad={handlePdfDocumentLoad}
-                theme={preferences.theme}
-              />
-            </Worker>
+          <h1 className="text-lg font-semibold truncate flex-1 mx-4">{book.title}</h1>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setScale(prev => Math.max(0.5, prev - 0.25))}
+              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+            >
+              −
+            </button>
+            <span className="text-sm">{(scale * 100).toFixed(0)}%</span>
+            <button
+              onClick={() => setScale(prev => Math.min(3, prev + 0.25))}
+              className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+            >
+              +
+            </button>
           </div>
-        )}
-      </main>
+        </div>
+      </div>
 
-      {/* Footer - only show for EPUB (PDF has built-in navigation) */}
-      {showControls && isEpub && (
-        <footer className="reader-footer" onClick={(e) => e.stopPropagation()}>
-          <button className="nav-button" onClick={handlePrevious}>
-            ← Previous
-          </button>
-          <button className="nav-button" onClick={handleNext}>
-            Next →
-          </button>
-        </footer>
-      )}
+      {/* PDF Viewer */}
+      <div className="max-w-4xl mx-auto p-4">
+        <InfiniteScroll
+          dataLength={pages.length}
+          next={loadMorePages}
+          hasMore={loadedPages < numPages}
+          loader={
+            <div className="text-center py-4">
+              <div className="text-gray-500">Loading pages...</div>
+            </div>
+          }
+          endMessage={
+            <div className="text-center py-4 text-gray-500">
+              <p>You've reached the end!</p>
+            </div>
+          }
+        >
+          <Document
+            file={pdfUrl}
+            onLoadSuccess={onDocumentLoadSuccess}
+            onLoadError={onDocumentLoadError}
+            loading={
+              <div className="text-center py-12">
+                <div className="text-lg">Loading PDF...</div>
+              </div>
+            }
+            error={
+              <div className="text-center py-12 text-red-600">
+                <div className="text-lg mb-2">Failed to load PDF</div>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Retry
+                </button>
+              </div>
+            }
+            className="flex flex-col items-center"
+          >
+            {pages.map((pageNum) => (
+              <div key={pageNum} id={`page-${pageNum}`} className="mb-4">
+                <Page
+                  pageNumber={pageNum}
+                  scale={scale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                  className="shadow-lg"
+                />
+              </div>
+            ))}
+          </Document>
+        </InfiniteScroll>
+      </div>
     </div>
   )
 }
