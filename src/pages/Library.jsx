@@ -419,7 +419,7 @@ function Library() {
                       current_page: book.current_page || null,
                       has_progress: !!book.current_page,
                     })
-                    navigate(`/reader/${book.id}`)
+                    navigate(`/library/${book.id}`)
                   }}
                 >
                   {/* Delete button - appears on hover */}

@@ -762,7 +762,7 @@ function Reader() {
                 zoom_level: scale,
                 progress_percentage: numPages ? Math.round((currentPage / numPages) * 100) : null,
               })
-              navigate('/')
+              navigate('/library')
             }}
             className="text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
           >
