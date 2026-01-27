@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { track } from '@vercel/analytics'
 import { trackEvent, getPostHog } from './lib/posthog'
+import Landing from './pages/Landing'
 import Library from './pages/Library'
 import Auth from './components/Auth'
 
@@ -37,19 +38,26 @@ function App() {
 
   return (
     <Router>
-      <Auth>
-        <Suspense fallback={
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-lg">Loading reader...</div>
-          </div>
-        }>
-          <Routes>
-            <Route path="/" element={<Library />} />
-            <Route path="/reader/:bookId" element={<Reader />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
-      </Auth>
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-lg">Loading...</div>
+        </div>
+      }>
+        <Routes>
+          {/* Public route - no authentication */}
+          <Route path="/" element={<Landing />} />
+
+          {/* Authenticated routes - wrapped in Auth */}
+          <Route path="/library" element={<Auth><Library /></Auth>} />
+          <Route path="/library/:bookId" element={<Auth><Reader /></Auth>} />
+
+          {/* Backward compatibility - redirect old reader URLs */}
+          <Route path="/reader/:bookId" element={<Navigate to="/library/:bookId" replace />} />
+
+          {/* Fallback - redirect to landing page */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </Router>
   )
 }

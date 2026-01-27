@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { identifyUser, resetUser, trackEvent } from '../lib/posthog'
@@ -13,9 +13,10 @@ function Auth({ children }) {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false)
   const queryClient = useQueryClient()
   const location = useLocation()
+  const navigate = useNavigate()
   
   // Only show buttons on Library page, not on Reader page
-  const isLibraryPage = location.pathname === '/'
+  const isLibraryPage = location.pathname === '/library'
 
   // Prevent body scroll when feedback modal is open
   useEffect(() => {
@@ -99,8 +100,8 @@ function Auth({ children }) {
         method: 'google_oauth',
       })
       
-      // Use current origin (automatically works for localhost and production)
-      const redirectTo = window.location.origin
+      // Redirect to /library after successful OAuth login
+      const redirectTo = `${window.location.origin}/library`
       console.log('OAuth redirect URL:', redirectTo)
       
       const { error } = await supabase.auth.signInWithOAuth({
@@ -127,12 +128,13 @@ function Auth({ children }) {
       trackEvent('sign_out_attempted')
       const { error } = await supabase.auth.signOut()
       if (error) throw error
-      
+
       resetUser()
       trackEvent('user_signed_out')
       toast.success('Signed out successfully')
       queryClient.clear() // Clear all cached queries
       refetchSession()
+      navigate('/') // Redirect to landing page
     } catch (error) {
       console.error('Error signing out:', error)
       trackEvent('sign_out_failed', {
