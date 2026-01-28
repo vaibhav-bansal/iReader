@@ -6,4 +6,4 @@ Allow: /
 Disallow: /library
 Disallow: /reader
 
-Sitemap: https://ireader-web.vercel.app/sitemap.xml
+Sitemap: https://i-reader.vercel.app/sitemap.xml
