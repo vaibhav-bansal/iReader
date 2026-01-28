@@ -1,0 +1,31 @@
+# iReader
+
+> A free, open-source, web-based PDF reader with cross-device sync and Kindle-like reading experience.
+
+iReader is a modern web application that lets users upload, manage, and read PDF documents in the browser. It provides a distraction-free reading experience with infinite scroll, automatic reading progress tracking, and cross-device synchronization.
+
+## Features
+
+- PDF library management with cover thumbnails
+- Cross-device sync via cloud storage (Supabase)
+- Automatic reading progress tracking
+- Distraction-free reader with adjustable zoom
+- Infinite scroll reading experience
+- Google OAuth authentication
+
+## Tech Stack
+
+- Frontend: React, Vite, Tailwind CSS
+- PDF Rendering: react-pdf (PDF.js)
+- Backend: Supabase (Auth, Database, Storage)
+- State Management: Zustand
+- Data Fetching: TanStack Query
+- Analytics: PostHog, Vercel Analytics
+- Deployment: Vercel
+
+## Links
+
+- Website: https://ireader-web.vercel.app
+- Source Code: https://github.com/vaibhav-bansal/iReader
+- Issues: https://github.com/vaibhav-bansal/iReader/issues
+- License: ISC
