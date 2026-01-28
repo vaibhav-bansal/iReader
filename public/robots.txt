@@ -1,9 +1,9 @@
-# iReader - Web-based PDF Reader
-# https://github.com/vaibhav-bansal/iReader
+# ReadEz - Web-based PDF Reader
+# https://github.com/vaibhav-bansal/readez
 
 User-agent: *
 Allow: /
 Disallow: /library
 Disallow: /reader
 
-Sitemap: https://i-reader.vercel.app/sitemap.xml
+Sitemap: https://readez.xyz/sitemap.xml

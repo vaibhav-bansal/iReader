@@ -1,6 +1,6 @@
 # PostHog Analytics Events
 
-This document lists all the events tracked by PostHog analytics in the iReader application.
+This document lists all the events tracked by PostHog analytics in the ReadEz application.
 
 ## Setup
 

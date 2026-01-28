@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { identifyUser, resetUser, trackEvent } from '../lib/posthog'
 import FeedbackForm from './FeedbackForm'
 
-const GITHUB_REPO_URL = 'https://github.com/vaibhav-bansal/iReader'
+const GITHUB_REPO_URL = 'https://github.com/vaibhav-bansal/readez'
 
 function Auth({ children }) {
   const [loading, setLoading] = useState(true)
@@ -172,7 +172,7 @@ function Auth({ children }) {
         </div>
 
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
-          <h1 className="text-3xl font-bold mb-4 text-center">iReader</h1>
+          <h1 className="text-3xl font-bold mb-4 text-center">ReadEz</h1>
           <p className="text-gray-600 mb-6 text-center">
             Sign in with Google to access your PDF library and sync reading progress across devices.
           </p>

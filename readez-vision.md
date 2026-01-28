@@ -1,9 +1,9 @@
 <!-- 83406b9a-83a5-491d-8378-c79460ffac08 6f0a3252-62c1-43cc-a65b-ac079a0646b8 -->
-# iReader Development Plan
+# ReadEz Development Plan
 
 ## Executive Summary
 
-iReader is a free, open-source, web-based e-book reader that delivers a Kindle-like experience entirely in the browser. The product is designed in two stages: **Stage 1** provides a fully-featured guest-only local reader, and **Stage 2** adds optional accounts, sync, and open catalog integrations while maintaining guest mode as first-class.
+ReadEz is a free, open-source, web-based e-book reader that delivers a Kindle-like experience entirely in the browser. The product is designed in two stages: **Stage 1** provides a fully-featured guest-only local reader, and **Stage 2** adds optional accounts, sync, and open catalog integrations while maintaining guest mode as first-class.
 
 ---
 
@@ -1069,4 +1069,4 @@ iReader is a free, open-source, web-based e-book reader that delivers a Kindle-l
 
 ## Conclusion
 
-This plan provides a comprehensive roadmap for building iReader as a free, open-source, browser-based e-book reader that rivals Kindle's user experience while respecting guest-first usage and open-source constraints. The phased approach ensures a solid foundation (Stage 1) before adding connected features (Stage 2), with clear dependencies and risk mitigation strategies throughout.
+This plan provides a comprehensive roadmap for building ReadEz as a free, open-source, browser-based e-book reader that rivals Kindle's user experience while respecting guest-first usage and open-source constraints. The phased approach ensures a solid foundation (Stage 1) before adding connected features (Stage 2), with clear dependencies and risk mitigation strategies throughout.
