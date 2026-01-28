@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { trackEvent } from '../lib/posthog'
 
-const GITHUB_REPO_URL = 'https://github.com/vaibhav-bansal/iReader'
+const GITHUB_REPO_URL = 'https://github.com/vaibhav-bansal/readez'
 
 function Landing() {
   const navigate = useNavigate()
@@ -50,7 +50,7 @@ function Landing() {
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900">iReader</h1>
+          <h1 className="text-2xl font-bold text-gray-900">ReadEz</h1>
           <a
             href={GITHUB_REPO_URL}
             target="_blank"
@@ -75,7 +75,7 @@ function Landing() {
           Synced Across All Devices
         </h2>
         <p className="text-xl text-gray-600 mb-10 max-w-3xl mx-auto">
-          iReader is a modern PDF reader that keeps your reading progress synchronized across all your devices.
+          ReadEz is a modern PDF reader that keeps your reading progress synchronized across all your devices.
           Upload, read, and pick up right where you left off.
         </p>
         <button
@@ -166,7 +166,7 @@ function Landing() {
               </div>
               <h4 className="text-xl font-semibold text-gray-900 mb-2">Reading Progress Tracking</h4>
               <p className="text-gray-600">
-                Never lose your place. iReader remembers exactly where you left off in every book.
+                Never lose your place. ReadEz remembers exactly where you left off in every book.
               </p>
             </div>
 
@@ -191,7 +191,7 @@ function Landing() {
       <section className="bg-gray-50 py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h3 className="text-3xl font-bold text-center text-gray-900 mb-16">
-            See iReader in Action
+            See ReadEz in Action
           </h3>
           <div className="space-y-16">
             {/* Library Screenshot */}
@@ -205,7 +205,7 @@ function Landing() {
               <div className="rounded-lg shadow-2xl overflow-hidden border border-gray-200">
                 <img
                   src="/screenshots/library.png"
-                  alt="iReader library showing collection of books with covers"
+                  alt="ReadEz library showing collection of books with covers"
                   className="w-full h-auto"
                 />
               </div>
@@ -222,7 +222,7 @@ function Landing() {
               <div className="rounded-lg shadow-2xl overflow-hidden border border-gray-200">
                 <img
                   src="/screenshots/reader.png"
-                  alt="iReader PDF reader showing book page with navigation controls"
+                  alt="ReadEz PDF reader showing book page with navigation controls"
                   className="w-full h-auto"
                 />
               </div>
@@ -281,7 +281,7 @@ function Landing() {
             Built in the Open. Contribute Today.
           </h3>
           <p className="text-lg text-gray-400 mb-8 max-w-2xl mx-auto">
-            iReader is fully open source. Whether you want to fix a bug, add a feature, or improve the docs — jump right in.
+            ReadEz is fully open source. Whether you want to fix a bug, add a feature, or improve the docs — jump right in.
             Every contribution matters.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">

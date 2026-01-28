@@ -1,4 +1,4 @@
-# iReader - PDF Reader
+# ReadEz - PDF Reader
 
 A lightweight web-based PDF reader with infinite scroll, progress tracking, and cross-device sync.
 
@@ -37,8 +37,8 @@ A lightweight web-based PDF reader with infinite scroll, progress tracking, and 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/vaibhav-bansal/iReader.git
-cd iReader
+git clone https://github.com/vaibhav-bansal/readez.git
+cd readez
 ```
 
 2. Install dependencies:

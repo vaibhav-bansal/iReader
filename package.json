@@ -1,5 +1,5 @@
 {
-  "name": "ireader",
+  "name": "readez",
   "version": "1.0.0",
   "type": "module",
   "description": "Lightweight web-based PDF reader with infinite scroll and cross-device sync",
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vaibhav-bansal/iReader.git"
+    "url": "git+https://github.com/vaibhav-bansal/readez.git"
   },
   "keywords": [
     "pdf",
@@ -22,9 +22,9 @@
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/vaibhav-bansal/iReader/issues"
+    "url": "https://github.com/vaibhav-bansal/readez/issues"
   },
-  "homepage": "https://github.com/vaibhav-bansal/iReader#readme",
+  "homepage": "https://github.com/vaibhav-bansal/readez#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.87.1",
     "@tanstack/react-query": "^5.90.12",
