@@ -70,12 +70,12 @@ function Landing() {
       {/* Hero Section */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 text-center">
         <h2 className="text-5xl font-bold text-gray-900 mb-6">
-          Your Personal PDF Library,
+          Your Personal Ebook Library,
           <br />
           Synced Across All Devices
         </h2>
         <p className="text-xl text-gray-600 mb-10 max-w-3xl mx-auto">
-          ReadEz is a modern PDF reader that keeps your reading progress synchronized across all your devices.
+          ReadEz is a free, universal ebook reader supporting PDF, EPUB, and more. Keep your reading progress synchronized across all your devices.
           Upload, read, and pick up right where you left off.
         </p>
         <button
@@ -138,9 +138,9 @@ function Landing() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                 </svg>
               </div>
-              <h4 className="text-xl font-semibold text-gray-900 mb-2">PDF Library Management</h4>
+              <h4 className="text-xl font-semibold text-gray-900 mb-2">Universal Ebook Library</h4>
               <p className="text-gray-600">
-                Upload and organize your PDF collection in one secure place. Access all your documents instantly.
+                Upload and organize your ebook collection in one secure place. Supports PDF, EPUB, and more formats.
               </p>
             </div>
 
@@ -200,7 +200,7 @@ function Landing() {
                 Your Personal Library
               </h4>
               <p className="text-lg text-gray-600 mb-8 max-w-3xl mx-auto">
-                Organize your PDF collection with beautiful cover thumbnails. See your reading progress and last read dates at a glance.
+                Organize your ebook collection with beautiful cover thumbnails. See your reading progress and last read dates at a glance.
               </p>
               <div className="rounded-lg shadow-2xl overflow-hidden border border-gray-200">
                 <img

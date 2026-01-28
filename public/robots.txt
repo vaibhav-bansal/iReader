@@ -1,4 +1,4 @@
-# ReadEz - Web-based PDF Reader
+# ReadEz - Universal Ebook Reader
 # https://github.com/vaibhav-bansal/readez
 
 User-agent: *
