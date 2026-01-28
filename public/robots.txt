@@ -1,0 +1,9 @@
+# iReader - Web-based PDF Reader
+# https://github.com/vaibhav-bansal/iReader
+
+User-agent: *
+Allow: /
+Disallow: /library
+Disallow: /reader
+
+Sitemap: https://ireader-web.vercel.app/sitemap.xml

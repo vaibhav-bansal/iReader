@@ -3,8 +3,67 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A free, open-source, web-based e-book reader with Kindle-like experience" />
-    <title>iReader - Free E-book Reader</title>
+
+    <!-- SEO Meta Tags -->
+    <title>iReader - Free Open-Source PDF Reader with Cross-Device Sync</title>
+    <meta name="description" content="iReader is a free, open-source web-based PDF reader. Upload, manage, and read your PDFs with infinite scroll, automatic progress tracking, and cross-device sync." />
+    <meta name="keywords" content="PDF reader, ebook reader, web reader, cross-device sync, open source, free PDF reader, online PDF viewer, reading progress" />
+    <link rel="canonical" href="https://ireader-web.vercel.app/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ireader-web.vercel.app/" />
+    <meta property="og:title" content="iReader - Free Open-Source PDF Reader with Cross-Device Sync" />
+    <meta property="og:description" content="Upload, manage, and read your PDFs with infinite scroll, automatic progress tracking, and cross-device sync. Free and open source." />
+    <meta property="og:image" content="https://ireader-web.vercel.app/screenshots/library.png" />
+    <meta property="og:site_name" content="iReader" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="iReader - Free Open-Source PDF Reader with Cross-Device Sync" />
+    <meta name="twitter:description" content="Upload, manage, and read your PDFs with infinite scroll, automatic progress tracking, and cross-device sync. Free and open source." />
+    <meta name="twitter:image" content="https://ireader-web.vercel.app/screenshots/library.png" />
+
+    <!-- Additional SEO -->
+    <meta name="robots" content="index, follow" />
+    <meta name="author" content="iReader Contributors" />
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "iReader",
+        "url": "https://ireader-web.vercel.app",
+        "description": "A free, open-source web-based PDF reader with cross-device sync, infinite scroll, and automatic reading progress tracking.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires a modern web browser with JavaScript enabled",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "featureList": [
+          "PDF library management",
+          "Cross-device reading sync",
+          "Automatic progress tracking",
+          "Infinite scroll reader",
+          "Adjustable zoom levels",
+          "Google OAuth sign-in"
+        ],
+        "screenshot": "https://ireader-web.vercel.app/screenshots/library.png",
+        "sourceOrganization": {
+          "@type": "Organization",
+          "name": "iReader Contributors",
+          "url": "https://github.com/vaibhav-bansal/iReader"
+        },
+        "license": "https://opensource.org/licenses/ISC",
+        "isAccessibleForFree": true
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
