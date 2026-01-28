@@ -2,7 +2,7 @@
   "name": "readez",
   "version": "1.0.0",
   "type": "module",
-  "description": "Lightweight web-based PDF reader with infinite scroll and cross-device sync",
+  "description": "Free, open-source web-based ebook reader supporting PDF, EPUB, and more. Features infinite scroll and cross-device sync.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -14,10 +14,15 @@
     "url": "git+https://github.com/vaibhav-bansal/readez.git"
   },
   "keywords": [
+    "ebook",
+    "ebook-reader",
     "pdf",
     "reader",
-    "ebook",
-    "react"
+    "epub",
+    "web-reader",
+    "cross-device-sync",
+    "react",
+    "open-source"
   ],
   "author": "",
   "license": "ISC",
