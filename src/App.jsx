@@ -5,6 +5,7 @@ import { trackEvent, getPostHog } from './lib/posthog'
 import Landing from './pages/Landing'
 import Library from './pages/Library'
 import Legal from './pages/Legal'
+import Feedback from './pages/Feedback'
 import Auth from './components/Auth'
 
 // Lazy load the Reader component (includes heavy PDF.js library)
@@ -48,6 +49,7 @@ function App() {
           {/* Public routes - no authentication */}
           <Route path="/" element={<Landing />} />
           <Route path="/legal" element={<Legal />} />
+          <Route path="/feedback" element={<Feedback />} />
 
           {/* Authenticated routes - wrapped in Auth */}
           <Route path="/library" element={<Auth><Library /></Auth>} />

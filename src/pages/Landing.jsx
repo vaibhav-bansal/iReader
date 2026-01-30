@@ -337,6 +337,9 @@ function Landing() {
               <Link to="/legal" className="hover:text-blue-300 transition-colors">
                 Terms & Privacy
               </Link>
+              <Link to="/feedback" className="hover:text-blue-300 transition-colors">
+                Feedback
+              </Link>
               <a
                 href={GITHUB_REPO_URL}
                 target="_blank"
