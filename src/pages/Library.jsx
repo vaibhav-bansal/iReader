@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDropzone } from 'react-dropzone'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import BookCover from '../components/BookCover'
 import BookCoverSkeleton from '../components/BookCoverSkeleton'
@@ -485,6 +485,13 @@ function Library() {
             No books yet. Upload a PDF to get started!
           </div>
         )}
+
+        {/* Footer */}
+        <footer className="mt-12 pt-6 border-t border-gray-200 text-center text-sm text-gray-500">
+          <Link to="/legal" className="hover:text-gray-700 transition-colors">
+            Terms & Privacy
+          </Link>
+        </footer>
       </div>
 
       {/* Delete Confirmation Dialog */}

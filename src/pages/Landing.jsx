@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { trackEvent } from '../lib/posthog'
@@ -102,6 +102,14 @@ function Landing() {
           </svg>
           Get Started with Google
         </button>
+
+        {/* Terms agreement */}
+        <p className="mt-3 text-sm text-gray-600">
+          By using ReadEz, you agree to our{' '}
+          <Link to="/legal" className="text-blue-600 hover:text-blue-700 underline">
+            Terms & Privacy
+          </Link>
+        </p>
 
         {/* Device compatibility notice */}
         <div className="mt-8 flex flex-col items-center gap-2">
@@ -264,6 +272,14 @@ function Landing() {
             </svg>
             Get Started with Google
           </button>
+
+          {/* Terms agreement */}
+          <p className="mt-3 text-sm text-blue-100">
+            By using ReadEz, you agree to our{' '}
+            <Link to="/legal" className="text-white hover:text-blue-50 underline">
+              Terms & Privacy
+            </Link>
+          </p>
         </div>
       </section>
 
@@ -315,19 +331,24 @@ function Landing() {
 
       {/* Footer */}
       <footer className="bg-gray-900 text-gray-400 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p>
-            Open source on{' '}
-            <a
-              href={GITHUB_REPO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => trackEvent('landing_github_clicked', { context: 'footer' })}
-              className="text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              GitHub
-            </a>
-          </p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex gap-6 text-sm">
+              <Link to="/legal" className="hover:text-blue-300 transition-colors">
+                Terms & Privacy
+              </Link>
+              <a
+                href={GITHUB_REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => trackEvent('landing_github_clicked', { context: 'footer' })}
+                className="hover:text-blue-300 transition-colors"
+              >
+                GitHub
+              </a>
+            </div>
+            <p className="text-sm">Open source ebook reader</p>
+          </div>
         </div>
       </footer>
     </div>

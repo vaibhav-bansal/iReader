@@ -85,3 +85,81 @@ CREATE TRIGGER update_books_updated_at BEFORE UPDATE ON books
 
 CREATE TRIGGER update_reading_progress_updated_at BEFORE UPDATE ON reading_progress
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Feedback submissions table
+-- Create table if it doesn't exist
+CREATE TABLE IF NOT EXISTS feedback (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  email TEXT NOT NULL,
+  category TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT DEFAULT 'open',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CHECK (status IN ('open', 'in_progress', 'resolved', 'closed'))
+);
+
+-- Alter existing table to add missing columns (if table already exists)
+DO $$
+BEGIN
+  -- Add email column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='feedback' AND column_name='email') THEN
+    ALTER TABLE feedback ADD COLUMN email TEXT NOT NULL DEFAULT '';
+  END IF;
+
+  -- Add subject column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='feedback' AND column_name='subject') THEN
+    ALTER TABLE feedback ADD COLUMN subject TEXT NOT NULL DEFAULT '';
+  END IF;
+
+  -- Add description column if it doesn't exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_name='feedback' AND column_name='description') THEN
+    ALTER TABLE feedback ADD COLUMN description TEXT NOT NULL DEFAULT '';
+  END IF;
+
+  -- Drop old columns if they exist (rating, message from old schema)
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='feedback' AND column_name='rating') THEN
+    ALTER TABLE feedback DROP COLUMN rating;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name='feedback' AND column_name='message') THEN
+    ALTER TABLE feedback DROP COLUMN message;
+  END IF;
+END $$;
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS feedback_user_id_idx ON feedback(user_id);
+CREATE INDEX IF NOT EXISTS feedback_created_at_idx ON feedback(created_at DESC);
+CREATE INDEX IF NOT EXISTS feedback_status_idx ON feedback(status);
+
+-- Enable Row Level Security
+ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Anyone can insert feedback" ON feedback;
+DROP POLICY IF EXISTS "Users can view their own feedback" ON feedback;
+
+-- RLS policies for feedback
+-- Anyone can insert feedback (authenticated or not)
+CREATE POLICY "Anyone can insert feedback"
+  ON feedback FOR INSERT
+  WITH CHECK (true);
+
+-- Users can only view their own feedback
+CREATE POLICY "Users can view their own feedback"
+  ON feedback FOR SELECT
+  USING (auth.uid() = user_id OR user_id IS NULL);
+
+-- Drop existing trigger if it exists
+DROP TRIGGER IF EXISTS update_feedback_updated_at ON feedback;
+
+-- Trigger to auto-update updated_at for feedback
+CREATE TRIGGER update_feedback_updated_at BEFORE UPDATE ON feedback
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
