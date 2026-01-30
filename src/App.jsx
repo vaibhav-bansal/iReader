@@ -4,6 +4,7 @@ import { track } from '@vercel/analytics'
 import { trackEvent, getPostHog } from './lib/posthog'
 import Landing from './pages/Landing'
 import Library from './pages/Library'
+import Legal from './pages/Legal'
 import Auth from './components/Auth'
 
 // Lazy load the Reader component (includes heavy PDF.js library)
@@ -44,8 +45,9 @@ function App() {
         </div>
       }>
         <Routes>
-          {/* Public route - no authentication */}
+          {/* Public routes - no authentication */}
           <Route path="/" element={<Landing />} />
+          <Route path="/legal" element={<Legal />} />
 
           {/* Authenticated routes - wrapped in Auth */}
           <Route path="/library" element={<Auth><Library /></Auth>} />

@@ -1,35 +1,37 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { trackEvent } from '../lib/posthog'
 
 function FeedbackForm({ onClose }) {
-  const [rating, setRating] = useState(0)
-  const [category, setCategory] = useState('query')
-  const [message, setMessage] = useState('')
+  const [user, setUser] = useState(null)
+  const [email, setEmail] = useState('')
+  const [category, setCategory] = useState('General Query')
+  const [subject, setSubject] = useState('')
+  const [description, setDescription] = useState('')
   const [isSubmitted, setIsSubmitted] = useState(false)
 
-  // Placeholder text based on category
-  const categoryPlaceholders = {
-    query: 'Ask your question or share your thoughts.',
-    request: 'Describe the feature you would like to see.',
-    collaboration: 'Tell us about your idea/proposal if you want to collaborate on the project.',
-    bug: 'Describe the bug you encountered, preferably with steps to reproduce.',
-  }
+  useEffect(() => {
+    // Get current user and auto-fill email
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUser(user)
+        setEmail(user.email || '')
+      }
+    })
+  }, [])
 
   const submitFeedbackMutation = useMutation({
-    mutationFn: async ({ rating, category, message }) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
+    mutationFn: async ({ email, category, subject, description }) => {
       const { data, error } = await supabase
         .from('feedback')
         .insert({
-          user_id: user.id,
-          rating,
+          user_id: user?.id || null,
+          email,
           category,
-          message,
+          subject,
+          description,
         })
         .select()
         .single()
@@ -40,12 +42,12 @@ function FeedbackForm({ onClose }) {
     onSuccess: (data) => {
       setIsSubmitted(true)
       trackEvent('feedback_submitted', {
-        rating: data.rating,
         category: data.category,
-        message_length: data.message.length,
+        has_subject: !!data.subject,
+        description_length: data.description.length,
       })
-      
-      // Reset form after showing success message
+
+      // Reset form and close modal after showing success message
       setTimeout(() => {
         onClose()
       }, 2000)
@@ -61,24 +63,36 @@ function FeedbackForm({ onClose }) {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    
-    if (rating === 0) {
-      toast.error('Please select a rating')
+
+    if (!email.trim()) {
+      toast.error('Please enter your email')
       return
     }
 
-    if (!message.trim()) {
-      toast.error('Please enter your feedback message')
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      toast.error('Please enter a valid email address')
+      return
+    }
+
+    if (!subject.trim()) {
+      toast.error('Please enter a subject')
+      return
+    }
+
+    if (!description.trim()) {
+      toast.error('Please enter your feedback')
       return
     }
 
     trackEvent('feedback_submit_attempted', {
-      rating,
       category,
-      message_length: message.length,
+      subject_length: subject.length,
+      description_length: description.length,
     })
 
-    submitFeedbackMutation.mutate({ rating, category, message })
+    submitFeedbackMutation.mutate({ email, category, subject, description })
   }
 
   if (isSubmitted) {
@@ -96,39 +110,31 @@ function FeedbackForm({ onClose }) {
   return (
     <div className="p-6">
       <h3 className="text-lg font-semibold mb-4 text-gray-900">Share Your Feedback</h3>
-      
+
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Rating */}
+        {/* Email */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            How would you rate your experience? <span className="text-red-500">*</span>
+          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+            Email <span className="text-red-500">*</span>
           </label>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                type="button"
-                onClick={() => {
-                  setRating(star)
-                  trackEvent('feedback_rating_selected', { rating: star })
-                }}
-                className={`text-3xl transition-transform hover:scale-110 ${
-                  star <= rating ? 'text-yellow-400' : 'text-gray-300'
-                }`}
-                aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
-              >
-                ★
-              </button>
-            ))}
-          </div>
+          <input
+            type="email"
+            id="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="your.email@example.com"
+            required
+          />
         </div>
 
         {/* Category */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
             Category <span className="text-red-500">*</span>
           </label>
           <select
+            id="category"
             value={category}
             onChange={(e) => {
               setCategory(e.target.value)
@@ -137,24 +143,42 @@ function FeedbackForm({ onClose }) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             required
           >
-            <option value="query">General Query</option>
-            <option value="request">Feature Request</option>
-            <option value="collaboration">Collaboration</option>
-            <option value="bug">Bug Report</option>
+            <option value="General Query">General Query</option>
+            <option value="Feature Request">Feature Request</option>
+            <option value="Bug Report">Bug Report</option>
+            <option value="Other">Other</option>
           </select>
         </div>
 
-        {/* Message */}
+        {/* Subject */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Your Feedback <span className="text-red-500">*</span>
+          <label htmlFor="subject" className="block text-sm font-medium text-gray-700 mb-2">
+            Subject <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            maxLength={200}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Brief summary of your feedback"
+            required
+          />
+        </div>
+
+        {/* Description */}
+        <div>
+          <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+            Description <span className="text-red-500">*</span>
           </label>
           <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder={categoryPlaceholders[category]}
+            id="description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
             rows={5}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            placeholder="Please provide as much detail as possible..."
             required
           />
         </div>
@@ -182,4 +206,3 @@ function FeedbackForm({ onClose }) {
 }
 
 export default FeedbackForm
-
