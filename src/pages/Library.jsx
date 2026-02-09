@@ -7,6 +7,9 @@ import { useNavigate, Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import BookCover from '../components/BookCover'
 import BookCoverSkeleton from '../components/BookCoverSkeleton'
+import SubscriptionBadge from '../components/SubscriptionBadge'
+import SubscriptionModal from '../components/SubscriptionModal'
+import { useSubscription } from '../hooks/useSubscription'
 import '../lib/pdfWorker' // Ensure PDF.js worker is configured
 import { generateThumbnail } from '../lib/thumbnailGenerator'
 import { trackEvent } from '../lib/posthog'
@@ -17,6 +20,19 @@ function Library() {
   const [uploading, setUploading] = useState(false)
   const [hoveredBookId, setHoveredBookId] = useState(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState(null) // { bookId, title }
+  const [subscriptionModalOpen, setSubscriptionModalOpen] = useState(false)
+
+  // Get current user for subscription data
+  const { data: userData } = useQuery({
+    queryKey: ['user'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      return user
+    },
+  })
+
+  // Get user subscription status
+  const { tier, isLoading: subscriptionLoading } = useSubscription(userData?.id)
 
   const { data: books, isLoading, error: booksError, refetch } = useQuery({
     queryKey: ['books'],
@@ -331,7 +347,11 @@ function Library() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">My Library</h1>
+        {/* Header with title and subscription badge */}
+        <div className="flex items-center gap-3 mb-8">
+          <h1 className="text-3xl font-bold">My Library</h1>
+          {!subscriptionLoading && <SubscriptionBadge tier={tier} />}
+        </div>
         
         {/* Upload area */}
         <div
@@ -548,6 +568,13 @@ function Library() {
           </div>
         </>
       )}
+
+      {/* Subscription Modal */}
+      <SubscriptionModal
+        isOpen={subscriptionModalOpen}
+        onClose={() => setSubscriptionModalOpen(false)}
+        currentTier={tier}
+      />
     </div>
   )
 }

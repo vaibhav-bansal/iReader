@@ -1,0 +1,62 @@
+{
+  "subscription.updated": {
+    "business_id": "bus_0NXOQ0yfCd3Y1rJQSNCqP",
+    "data": {
+      "subscription_id": "sub_0NY8PvRztR7ngF66WJSVR",
+      "status": "active",
+      "customer": {
+        "customer_id": "cus_0NY8KzHqFoBYKXdtS0bHF",
+        "email": "vbansal079@gmail.com",
+        "name": "Vaibhav Bansal"
+      },
+      "metadata": {
+        "tier": "pro",
+        "user_id": "00b8ffcf-97fa-43c4-8b66-5a2c615ba07d"
+      },
+      "previous_billing_date": "2026-02-09T16:39:11.259682Z",
+      "next_billing_date": "2026-03-09T16:39:32.619702Z",
+      "expires_at": "2036-02-09T16:39:32.619702Z",
+      "recurring_pre_tax_amount": 499,
+      "currency": "USD"
+    },
+    "timestamp": "2026-02-09T16:39:32.598824Z",
+    "type": "subscription.updated"
+  },
+  "payment.succeeded": {
+    "business_id": "bus_0NXOQ0yfCd3Y1rJQSNCqP",
+    "data": {
+      "payment_id": "pay_0NY8PvRxcnKILRuPrIjlV",
+      "subscription_id": "sub_0NY8PvRztR7ngF66WJSVR",
+      "customer": {
+        "customer_id": "cus_0NY8KzHqFoBYKXdtS0bHF",
+        "email": "vbansal079@gmail.com",
+        "name": "Vaibhav Bansal"
+      },
+      "total_amount": 589,
+      "tax": 90,
+      "currency": "USD",
+      "status": "succeeded",
+      "payment_method": "card",
+      "metadata": {
+        "tier": "pro",
+        "user_id": "00b8ffcf-97fa-43c4-8b66-5a2c615ba07d"
+      },
+      "created_at": "2026-02-09T16:39:11.259682Z"
+    },
+    "timestamp": "2026-02-09T16:39:32.598824Z",
+    "type": "payment.succeeded"
+  },
+  "subscription.active": {
+    "description": "Same structure as subscription.updated, sent when subscription becomes active"
+  },
+  "subscription.renewed": {
+    "description": "Same structure as subscription.updated, sent when subscription renews"
+  },
+  "subscription.cancelled": {
+    "data": {
+      "status": "cancelled",
+      "cancelled_at": "2026-02-09T16:28:12.798806Z"
+    },
+    "description": "Same structure as subscription.updated, but status is 'cancelled' and cancelled_at is set"
+  }
+}
