@@ -6,6 +6,8 @@ import Landing from './pages/Landing'
 import Library from './pages/Library'
 import Legal from './pages/Legal'
 import Feedback from './pages/Feedback'
+import SubscriptionSuccess from './pages/SubscriptionSuccess'
+import SubscriptionCancel from './pages/SubscriptionCancel'
 import Auth from './components/Auth'
 
 // Lazy load the Reader component (includes heavy PDF.js library)
@@ -50,6 +52,10 @@ function App() {
           <Route path="/" element={<Landing />} />
           <Route path="/legal" element={<Legal />} />
           <Route path="/feedback" element={<Feedback />} />
+
+          {/* Subscription routes - require authentication */}
+          <Route path="/subscription/success" element={<Auth><SubscriptionSuccess /></Auth>} />
+          <Route path="/subscription/cancel" element={<Auth><SubscriptionCancel /></Auth>} />
 
           {/* Authenticated routes - wrapped in Auth */}
           <Route path="/library" element={<Auth><Library /></Auth>} />

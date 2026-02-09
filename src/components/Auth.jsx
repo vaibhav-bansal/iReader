@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 import { identifyUser, resetUser, trackEvent } from '../lib/posthog'
 import FeedbackForm from './FeedbackForm'
+import { useSubscription } from '../hooks/useSubscription'
 
 const GITHUB_REPO_URL = 'https://github.com/vaibhav-bansal/readez'
 
@@ -38,6 +39,9 @@ function Auth({ children }) {
     },
     staleTime: Infinity,
   })
+
+  // Get user subscription status
+  const { tier } = useSubscription(session?.user?.id)
 
   useEffect(() => {
     if (!loading) {
@@ -210,18 +214,36 @@ function Auth({ children }) {
       {/* Only show buttons on Library page, not on Reader page */}
       {isLibraryPage && (
         <div className="absolute top-4 right-4 flex items-center gap-3 z-50">
-          {/* Feedback Button */}
+          {/* Upgrade Button - Only show for free tier */}
+          {tier === 'free' && (
+            <Link
+              to="/#pricing"
+              onClick={() => trackEvent('upgrade_button_clicked', { location: 'header' })}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium cursor-pointer transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Upgrade
+            </Link>
+          )}
+
+          {/* Feedback Icon Button */}
           <button
             onClick={() => {
               setShowFeedbackModal(true)
               trackEvent('feedback_button_clicked', { context: 'header' })
             }}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium cursor-pointer transition-colors"
+            className="text-gray-600 hover:text-blue-600 transition-colors"
             title="Share Feedback"
+            aria-label="Share Feedback"
           >
-            Feedback
+            <svg className="w-6 h-6" xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" fill="currentColor">
+              <path d="M0 0h24v24H0V0z" fill="none"/>
+              <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z"/>
+            </svg>
           </button>
-          
+
           {/* GitHub Link */}
           <a
             href={GITHUB_REPO_URL}
